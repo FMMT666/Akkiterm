@@ -90,6 +90,8 @@ ESC = b'\x1b'
 CR  = b'\r'
 LF  = b'\n'
 
+CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akkiterm.cfg')
+
 # ----------------------------------------------------------------------
 # --- Helper functions
 def clear_screen():
@@ -98,7 +100,7 @@ def clear_screen():
 
 def banner():
     print("╔═════════════════════════════════╗")
-    print("║         Akkiterm   v0.1         ║")
+    print("║         Akkiterm  v0.11         ║")
     print("║   ESC = menu  |  type to comm   ║")
     print("╚═════════════════════════════════╝")
     print()
@@ -181,6 +183,49 @@ class SerialTerminal:
         self._hex_col_count  = 0    # running byte counter for current line
         self._reader_thread: threading.Thread | None = None
 
+    # --- Config save / load
+    def save_config(self):
+        """Save current settings to akkiterm.cfg."""
+        try:
+            with open(CFG_FILE, 'w') as f:
+                f.write('# akkiterm configuration\n')
+                f.write(f'PORT={self.port}\n')
+                f.write(f'BAUDRATE={self.baudrate}\n')
+                f.write(f'BYTESIZE={self.bytesize}\n')
+                f.write(f'PARITY={self.parity}\n')
+                f.write(f'STOPBITS={self.stopbits}\n')
+                f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
+                f.write(f'HEX_COLS={self._hex_cols}\n')
+            print(f'  Settings saved to {CFG_FILE}')
+        except OSError as e:
+            print(f'  \u2716  Could not save settings: {e}')
+
+    def load_config(self) -> str | None:
+        """Load settings from akkiterm.cfg. Return saved port name or None."""
+        if not os.path.exists(CFG_FILE):
+            return None
+        cfg = {}
+        try:
+            with open(CFG_FILE, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    key, _, val = line.partition('=')
+                    cfg[key.strip()] = val.strip()
+        except OSError:
+            return None
+        try:
+            if 'BAUDRATE' in cfg: self.baudrate  = int(cfg['BAUDRATE'])
+            if 'BYTESIZE' in cfg: self.bytesize  = int(cfg['BYTESIZE'])
+            if 'PARITY'   in cfg: self.parity    = cfg['PARITY']
+            if 'STOPBITS' in cfg: self.stopbits  = float(cfg['STOPBITS'])
+            if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
+            if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
+        except (ValueError, KeyError):
+            pass
+        return cfg.get('PORT')
+
     # --- Connection
     def connect(self, port: str) -> bool:
         try:
@@ -258,6 +303,7 @@ class SerialTerminal:
         print("│  [r]  reconnect                 │")
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
         print(f"│  [w]  hex cols    [{self._hex_cols:>3}]         │")
+        print("│  [s]  save settings             │")
         print("│  [q]  quit                      │")
         print("│  [Enter/Esc]  back              │")
         print("└─────────────────────────────────┘")
@@ -320,6 +366,9 @@ class SerialTerminal:
             print("  Reconnecting...")
             self.reconnect()
 
+        elif choice == 's':
+            self.save_config()
+
         # ESC / Enter / anything else -> back to terminal mode.
         _set_raw(True)
         self._in_menu = False
@@ -329,10 +378,25 @@ class SerialTerminal:
         clear_screen()
         banner()
 
-        # Select port.
-        port = select_port()
-        if not port:
-            sys.exit(0)
+        # Load saved config; use saved port if still available.
+        saved_port = self.load_config()
+        available  = [p.device for p in list_ports()]
+
+        if saved_port and saved_port in available:
+            print(f"  Config loaded:")
+            print(f"  Port      : {saved_port}")
+            print(f"  Baud rate : {self.baudrate}")
+            print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
+            cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
+            print(f"  Hex output: {'ON' if self._hex_mode else 'OFF'}  ({cols_label} bytes/line)")
+            print()
+            port = saved_port
+        else:
+            if saved_port:
+                print(f"  \u26a0  Saved port {saved_port!r} not available, please select manually.\n")
+            port = select_port()
+            if not port:
+                sys.exit(0)
 
         if not self.connect(port):
             sys.exit(1)

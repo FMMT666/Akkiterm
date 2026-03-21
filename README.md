@@ -74,11 +74,12 @@ and store it, together with akkiterm.py, in a directory within your path variabl
 This should be self-explanatory (for now).  
 Press ESC for the menu.
 
+In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded
+automatically.
 
 
 ---
 ## TODO
-    - switch to English
     - HEX input
     - new line on/off
     - send macros
@@ -88,6 +89,9 @@ Press ESC for the menu.
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/22:
+    - added config file with automatic loading function on startup
 
 ### CHANGES 2026/03/21:
     - added HEX output
