@@ -176,6 +176,9 @@ class SerialTerminal:
 
         self._running        = False
         self._in_menu        = False
+        self._hex_mode       = False
+        self._hex_cols       = 16   # bytes per line in hex mode (0 = no wrap)
+        self._hex_col_count  = 0    # running byte counter for current line
         self._reader_thread: threading.Thread | None = None
 
     # --- Connection
@@ -221,8 +224,17 @@ class SerialTerminal:
             try:
                 data = self.ser.read(256)
                 if data:
-                    # Print raw bytes as text (UTF-8; replace unknown bytes).
-                    sys.stdout.write(data.decode('utf-8', errors='replace'))
+                    if self._hex_mode:
+                        for b in data:
+                            sys.stdout.write(f'{b:02X} ')
+                            if self._hex_cols > 0:
+                                self._hex_col_count += 1
+                                if self._hex_col_count >= self._hex_cols:
+                                    sys.stdout.write('\r\n')
+                                    self._hex_col_count = 0
+                    else:
+                        # Print raw bytes as text (UTF-8; replace unknown bytes).
+                        sys.stdout.write(data.decode('utf-8', errors='replace'))
                     sys.stdout.flush()
             except serial.SerialException:
                 if self._running:
@@ -238,11 +250,14 @@ class SerialTerminal:
         print("┌─────────────────────────────────┐")
         print("│              MENU               │")
         print("├─────────────────────────────────┤")
+        hex_state = "on " if self._hex_mode else "off"
         print("│  [b]  change baud rate          │")
         print("│  [p]  change port               │")
         print("│  [i]  info / status             │")
         print("│  [c]  clear screen              │")
         print("│  [r]  reconnect                 │")
+        print(f"│  [x]  hex output  [{hex_state:<3}]         │")
+        print(f"│  [w]  hex cols    [{self._hex_cols:>3}]         │")
         print("│  [q]  quit                      │")
         print("│  [Enter/Esc]  back              │")
         print("└─────────────────────────────────┘")
@@ -266,12 +281,34 @@ class SerialTerminal:
             elif new_port == self.port:
                 print("  Port unchanged.")
 
+        elif choice == 'x':
+            self._hex_mode = not self._hex_mode
+            self._hex_col_count = 0
+            state = "ON" if self._hex_mode else "OFF"
+            print(f"  Hex output: {state}")
+
+        elif choice == 'w':
+            try:
+                cols = int(input("  Bytes per line (0 = no wrap): ").strip())
+                if cols >= 0:
+                    self._hex_cols      = cols
+                    self._hex_col_count = 0
+                    label = "no wrap" if cols == 0 else str(cols)
+                    print(f"  Hex cols: {label}")
+                else:
+                    print("  Invalid value.")
+            except (ValueError, KeyboardInterrupt):
+                print("  Unchanged.")
+
         elif choice == 'i':
             connected = self.ser and self.ser.is_open
             status = "Connected ✔" if connected else "Disconnected ✖"
+            hex_status = "ON" if self._hex_mode else "OFF"
+            hex_cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
             print(f"\n  Port      : {self.port or '—'}")
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
+            print(f"  Hex output: {hex_status}  ({hex_cols_label} bytes/line)")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")
 

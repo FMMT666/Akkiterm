@@ -1,7 +1,7 @@
 Akkiterm
 ========
 
-A yet quick and dirty serial terminal application for the console.  
+A quick and dirty serial terminal application for the console, for now.  
 Useful for coomunication with MCUs, debugging, etc.  
 
 Works on all platforms which support Python and PySerial. 
@@ -71,23 +71,27 @@ and store it, together with akkiterm.py, in a directory within your path variabl
 ---
 ## USAGE
 
-This should be self explanatory (for now).
+This should be self-explanatory (for now).  
+Press ESC for the menu.
 
 
 
 ---
 ## TODO
     - switch to English
-    - HEX output
     - HEX input
     - new line on/off
-    - send makros
+    - send macros
     - send files
     - many, many more
 
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/21:
+    - added HEX output
+    - added HEX output formatting; new line after n bytes
 
 ### CHANGES 2026/03/18:
     - initial version
