@@ -8,12 +8,27 @@ Works on all platforms which support Python and PySerial.
 
 ---------------------------------------------------------------------------------------------
 
-Not nearly there yet; not even in the same universe, but I always
-wanted a simple macOS console replacement for the great RealTerm Windoze app.  
+---
+## FEATURES (yet)
 
-I often work with small controllers, like PICs, NECs (oops Renesas'), etc. and
-a simple serial connection is still the way to go for lab equipment, debugging,
-dataloggers or configuration.
+  - ASCII
+  - HEX
+  - HEX formatted
+  - local folder config save & autoload
+  - console (yeah \o/)
+  - many more to come
+  - ...
+
+
+### SOME SCREENSHOTS
+
+Startup with ```akkiterm.cfg``` in local path:  
+
+![startup with config](images/start.png)  
+
+The menu:  
+
+![menu](images/menu.png)  
 
 [...]
 
@@ -84,7 +99,7 @@ automatically.
     - new line on/off
     - send macros
     - send files
-    - many, many more
+    - much more
 
 
 ---

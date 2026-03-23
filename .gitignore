@@ -1,5 +1,10 @@
 *
 
+!/images
+!/images/.gitignore
+!/images/start.png
+!/images/menu.png
+
 !.gitignore
 
 !akkiterm.py
