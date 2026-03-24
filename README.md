@@ -14,6 +14,7 @@ Works on all platforms which support Python and PySerial.
   - ASCII
   - HEX
   - HEX formatted
+  - DEC
   - local folder config save & autoload
   - console (yeah \o/)
   - many more to come
@@ -95,15 +96,20 @@ automatically.
 
 ---
 ## TODO
-    - HEX input
-    - new line on/off
+    - decimal output (like formatted hex)
     - send macros
+    - optional delimiter for formatted output (e.g. CSV)
+    - logging to file
     - send files
+    - new line on/off
     - much more
 
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/24:
+    - added HEX and DEC input (linewise)
 
 ### CHANGES 2026/03/22:
     - added config file with automatic loading function on startup

@@ -181,6 +181,9 @@ class SerialTerminal:
         self._hex_mode       = False
         self._hex_cols       = 16   # bytes per line in hex mode (0 = no wrap)
         self._hex_col_count  = 0    # running byte counter for current line
+        self._line_send_mode = False
+        self._line_send_format  = 'dec'
+        self._line_input_buf = bytearray()
         self._reader_thread: threading.Thread | None = None
 
     # --- Config save / load
@@ -196,6 +199,8 @@ class SerialTerminal:
                 f.write(f'STOPBITS={self.stopbits}\n')
                 f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
                 f.write(f'HEX_COLS={self._hex_cols}\n')
+                f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
+                f.write(f'LINE_SEND_FORMAT={self._line_send_format}\n')
             print(f'  Settings saved to {CFG_FILE}')
         except OSError as e:
             print(f'  \u2716  Could not save settings: {e}')
@@ -222,9 +227,63 @@ class SerialTerminal:
             if 'STOPBITS' in cfg: self.stopbits  = float(cfg['STOPBITS'])
             if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
             if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
+            if 'LINE_SEND_MODE' in cfg:
+                self._line_send_mode = cfg['LINE_SEND_MODE'].lower() == 'true'
+            if 'LINE_SEND_FORMAT' in cfg and cfg['LINE_SEND_FORMAT'].lower() in ('dec', 'hex'):
+                self._line_send_format = cfg['LINE_SEND_FORMAT'].lower()
         except (ValueError, KeyError):
             pass
         return cfg.get('PORT')
+
+    def _parse_byte_token(self, token: str) -> int | None:
+        """Parse a single token in current line-send format and return 0..255."""
+        if not token:
+            return None
+        token_l = token.lower().strip()
+
+        if self._line_send_format == 'hex':
+            if not all(c in '0123456789abcdef' for c in token_l):
+                return None
+            base = 16
+        else:
+            if not token_l.isdigit():
+                return None
+            base = 10
+
+        try:
+            value = int(token_l, base)
+        except ValueError:
+            return None
+        if not (0 <= value <= 255):
+            return None
+        return value
+
+    def _send_collected_line(self):
+        """Parse and send buffered line as raw bytes."""
+        line = self._line_input_buf.decode('ascii', errors='ignore').strip()
+        self._line_input_buf.clear()
+
+        if not line:
+            return
+
+        out = bytearray()
+        for token in line.split():
+            value = self._parse_byte_token(token)
+            if value is None:
+                fmt_hint = "0..255" if self._line_send_format == 'dec' else "00..FF"
+                sys.stdout.write(f"\r\n  Invalid token: {token!r} (expected {self._line_send_format.upper()} {fmt_hint})\r\n")
+                sys.stdout.flush()
+                return
+            out.append(value)
+
+        if self.ser and self.ser.is_open and not self._in_menu:
+            try:
+                self.ser.write(bytes(out))
+                sys.stdout.write(f"\r\n  Sent {len(out)} byte(s).\r\n")
+                sys.stdout.flush()
+            except serial.SerialException as e:
+                sys.stdout.write(f"\r\n✖  Send error: {e}\r\n")
+                sys.stdout.flush()
 
     # --- Connection
     def connect(self, port: str) -> bool:
@@ -303,6 +362,8 @@ class SerialTerminal:
         print("│  [r]  reconnect                 │")
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
         print(f"│  [w]  hex cols    [{self._hex_cols:>3}]         │")
+        print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
+        print(f"│  [f]  line format [{self._line_send_format:<3}]         │")
         print("│  [s]  save settings             │")
         print("│  [q]  quit                      │")
         print("│  [Enter/Esc]  back              │")
@@ -346,15 +407,37 @@ class SerialTerminal:
             except (ValueError, KeyboardInterrupt):
                 print("  Unchanged.")
 
+        elif choice == 'm':
+            self._line_send_mode = not self._line_send_mode
+            self._line_input_buf.clear()
+            state = "ON" if self._line_send_mode else "OFF"
+            print(f"  Line send mode: {state}")
+            if self._line_send_mode:
+                if self._line_send_format == 'hex':
+                    print("  Enter HEX bytes separated by spaces, then press Enter (e.g. 0A 10 7F ff).")
+                else:
+                    print("  Enter DEC bytes separated by spaces, then press Enter (e.g. 10 20 127 255).")
+
+        elif choice == 'f':
+            line_format = input("  Line send format [dec/hex]: ").strip().lower()
+            if line_format in ('dec', 'hex'):
+                self._line_send_format = line_format
+                self._line_input_buf.clear()
+                print(f"  Line send format: {self._line_send_format.upper()}")
+            elif line_format:
+                print("  Invalid format.")
+
         elif choice == 'i':
             connected = self.ser and self.ser.is_open
             status = "Connected ✔" if connected else "Disconnected ✖"
             hex_status = "ON" if self._hex_mode else "OFF"
             hex_cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
+            line_mode = "ON" if self._line_send_mode else "OFF"
             print(f"\n  Port      : {self.port or '—'}")
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             print(f"  Hex output: {hex_status}  ({hex_cols_label} bytes/line)")
+            print(f"  Line send : {line_mode}  ({self._line_send_format.upper()})")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")
 
@@ -389,6 +472,7 @@ class SerialTerminal:
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
             print(f"  Hex output: {'ON' if self._hex_mode else 'OFF'}  ({cols_label} bytes/line)")
+            print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
             print()
             port = saved_port
         else:
@@ -421,12 +505,39 @@ class SerialTerminal:
                     continue
 
                 if ch == ESC:
+                    if self._line_send_mode and self._line_input_buf:
+                        self._line_input_buf.clear()
+                        sys.stdout.write("\r\n")
+                        sys.stdout.flush()
                     self.show_menu()
                     continue
 
                 # Send input to serial port.
                 if self.ser and self.ser.is_open and not self._in_menu:
                     try:
+                        if self._line_send_mode:
+                            # Collect bytes as text tokens and send parsed bytes on Enter.
+                            if ch in (CR, LF):
+                                sys.stdout.write("\r\n")
+                                sys.stdout.flush()
+                                self._send_collected_line()
+                                continue
+                            if ch in (b'\x08', b'\x7f'):
+                                if self._line_input_buf:
+                                    self._line_input_buf.pop()
+                                    sys.stdout.write("\b \b")
+                                    sys.stdout.flush()
+                                continue
+                            if 32 <= ch[0] <= 126:
+                                if not self._line_input_buf:
+                                    # Start collected input on a fresh line for readability.
+                                    sys.stdout.write("\r\n")
+                                self._line_input_buf.append(ch[0])
+                                sys.stdout.write(chr(ch[0]))
+                                sys.stdout.flush()
+                                continue
+                            continue
+
                         # Send CR as CR+LF (adjust if needed).
                         if ch == CR:
                             self.ser.write(CR + LF)
