@@ -179,6 +179,7 @@ class SerialTerminal:
         self._running        = False
         self._in_menu        = False
         self._hex_mode       = False
+        self._dec_mode       = False
         self._hex_cols       = 16   # bytes per line in hex mode (0 = no wrap)
         self._hex_col_count  = 0    # running byte counter for current line
         self._line_send_mode = False
@@ -198,6 +199,7 @@ class SerialTerminal:
                 f.write(f'PARITY={self.parity}\n')
                 f.write(f'STOPBITS={self.stopbits}\n')
                 f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
+                f.write(f'DEC_MODE={str(self._dec_mode).lower()}\n')
                 f.write(f'HEX_COLS={self._hex_cols}\n')
                 f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
                 f.write(f'LINE_SEND_FORMAT={self._line_send_format}\n')
@@ -226,11 +228,15 @@ class SerialTerminal:
             if 'PARITY'   in cfg: self.parity    = cfg['PARITY']
             if 'STOPBITS' in cfg: self.stopbits  = float(cfg['STOPBITS'])
             if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
+            if 'DEC_MODE' in cfg: self._dec_mode = cfg['DEC_MODE'].lower() == 'true'
             if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
             if 'LINE_SEND_MODE' in cfg:
                 self._line_send_mode = cfg['LINE_SEND_MODE'].lower() == 'true'
             if 'LINE_SEND_FORMAT' in cfg and cfg['LINE_SEND_FORMAT'].lower() in ('dec', 'hex'):
                 self._line_send_format = cfg['LINE_SEND_FORMAT'].lower()
+            # If both are enabled by malformed/legacy config, prefer HEX.
+            if self._hex_mode and self._dec_mode:
+                self._dec_mode = False
         except (ValueError, KeyError):
             pass
         return cfg.get('PORT')
@@ -336,6 +342,14 @@ class SerialTerminal:
                                 if self._hex_col_count >= self._hex_cols:
                                     sys.stdout.write('\r\n')
                                     self._hex_col_count = 0
+                    elif self._dec_mode:
+                        for b in data:
+                            sys.stdout.write(f'{b:03d} ')
+                            if self._hex_cols > 0:
+                                self._hex_col_count += 1
+                                if self._hex_col_count >= self._hex_cols:
+                                    sys.stdout.write('\r\n')
+                                    self._hex_col_count = 0
                     else:
                         # Print raw bytes as text (UTF-8; replace unknown bytes).
                         sys.stdout.write(data.decode('utf-8', errors='replace'))
@@ -355,13 +369,15 @@ class SerialTerminal:
         print("│              MENU               │")
         print("├─────────────────────────────────┤")
         hex_state = "on " if self._hex_mode else "off"
+        dec_state = "on " if self._dec_mode else "off"
         print("│  [b]  change baud rate          │")
         print("│  [p]  change port               │")
         print("│  [i]  info / status             │")
         print("│  [c]  clear screen              │")
         print("│  [r]  reconnect                 │")
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
-        print(f"│  [w]  hex cols    [{self._hex_cols:>3}]         │")
+        print(f"│  [d]  dec output  [{dec_state:<3}]         │")
+        print(f"│  [w]  out cols    [{self._hex_cols:>3}]         │")
         print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
         print(f"│  [f]  line format [{self._line_send_format:<3}]         │")
         print("│  [s]  save settings             │")
@@ -390,9 +406,19 @@ class SerialTerminal:
 
         elif choice == 'x':
             self._hex_mode = not self._hex_mode
+            if self._hex_mode:
+                self._dec_mode = False
             self._hex_col_count = 0
             state = "ON" if self._hex_mode else "OFF"
             print(f"  Hex output: {state}")
+
+        elif choice == 'd':
+            self._dec_mode = not self._dec_mode
+            if self._dec_mode:
+                self._hex_mode = False
+            self._hex_col_count = 0
+            state = "ON" if self._dec_mode else "OFF"
+            print(f"  Dec output: {state}")
 
         elif choice == 'w':
             try:
@@ -401,7 +427,7 @@ class SerialTerminal:
                     self._hex_cols      = cols
                     self._hex_col_count = 0
                     label = "no wrap" if cols == 0 else str(cols)
-                    print(f"  Hex cols: {label}")
+                    print(f"  Output cols: {label}")
                 else:
                     print("  Invalid value.")
             except (ValueError, KeyboardInterrupt):
@@ -430,13 +456,18 @@ class SerialTerminal:
         elif choice == 'i':
             connected = self.ser and self.ser.is_open
             status = "Connected ✔" if connected else "Disconnected ✖"
-            hex_status = "ON" if self._hex_mode else "OFF"
+            if self._hex_mode:
+                out_mode = "HEX"
+            elif self._dec_mode:
+                out_mode = "DEC"
+            else:
+                out_mode = "ASCII"
             hex_cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
             line_mode = "ON" if self._line_send_mode else "OFF"
             print(f"\n  Port      : {self.port or '—'}")
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
-            print(f"  Hex output: {hex_status}  ({hex_cols_label} bytes/line)")
+            print(f"  Output    : {out_mode}  ({hex_cols_label} bytes/line)")
             print(f"  Line send : {line_mode}  ({self._line_send_format.upper()})")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")
@@ -471,7 +502,13 @@ class SerialTerminal:
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
-            print(f"  Hex output: {'ON' if self._hex_mode else 'OFF'}  ({cols_label} bytes/line)")
+            if self._hex_mode:
+                out_mode = 'HEX'
+            elif self._dec_mode:
+                out_mode = 'DEC'
+            else:
+                out_mode = 'ASCII'
+            print(f"  Output    : {out_mode}  ({cols_label} bytes/line)")
             print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
             print()
             port = saved_port

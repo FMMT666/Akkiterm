@@ -12,9 +12,7 @@ Works on all platforms which support Python and PySerial.
 ## FEATURES (yet)
 
   - ASCII
-  - HEX
-  - HEX formatted
-  - DEC
+  - HEX/DEV with optional formatting
   - local folder config save & autoload
   - console (yeah \o/)
   - many more to come
@@ -96,17 +94,20 @@ automatically.
 
 ---
 ## TODO
-    - decimal output (like formatted hex)
-    - send macros
-    - optional delimiter for formatted output (e.g. CSV)
     - logging to file
+    - optional delimiter for formatted output (e.g. CSV)
     - send files
+    - send macros
+    - trigger
     - new line on/off
     - much more
 
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/25:
+    - added DEC output mode (formatted, 3 digits with leading zeros)
 
 ### CHANGES 2026/03/24:
     - added HEX and DEC input (linewise)
