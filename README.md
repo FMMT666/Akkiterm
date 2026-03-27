@@ -2,7 +2,7 @@ Akkiterm
 ========
 
 A quick and dirty serial terminal application for the console, for now.  
-Useful for coomunication with MCUs, debugging, etc.  
+Useful for communication with MCUs, debugging, etc.  
 
 Works on all platforms which support Python and PySerial. 
 
@@ -16,6 +16,7 @@ Works on all platforms which support Python and PySerial.
   - log received output to local file
   - macros: configurable key bindings (ASCII/DEC/HEX)
   - local folder config save & autoload
+  - local TX echo
   - console (yeah \o/)
   - many more to come
   - ...
@@ -99,7 +100,7 @@ So far, macros can be defined in the config file:
 
     MACRO_<key>_<TYPE>=<macro/data to be sent>
 
-Type can be one off:
+Type can be one of:
 
     ASC -> ASCII text
     DEC -> decimal numbers, to be sent as (character) codes
@@ -112,6 +113,11 @@ Example:
     MACRO_3_ASC=Drei, angenehm.
     MACRO_d_DEC=97 98 99 100 101
     MACRO_h_HEX=33 34 35 3a
+
+With this, pressing
+  - "1", "2" or "3" (```ASC```) will send the corresponding strings defined.  
+  - "d" will send the character codes 97..101, resulting in '```abcde```'.  
+  - "h" will send the character codes 0x33, 0x34, 0x35, 0x3a, which should give '```123:```'.
 
 
 ---
@@ -126,7 +132,10 @@ Example:
 ---
 ## NEWS
 
-### CHANGES 2026/03/27 (continued):
+### CHANGES 2026/03/28:
+    - added local TX echo
+
+### CHANGES 2026/03/27:
     - added macro system (configurable key bindings with ASC/DEC/HEX data)
     - config format: MACRO_<key>_<format>=<value> (e.g., MACRO_2_ASC=Hello, MACRO_L_HEX=aa bb e4)
     - added logging of received output to local file

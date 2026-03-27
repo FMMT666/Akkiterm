@@ -192,6 +192,7 @@ class SerialTerminal:
         self._line_send_mode = False
         self._line_send_format  = 'dec'
         self._line_input_buf = bytearray()
+        self._echo_enabled   = False
         self._log_to_file    = False
         self._log_file       = None
         self._log_file_path  = ''
@@ -265,6 +266,7 @@ class SerialTerminal:
                 f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
                 f.write(f'DEC_MODE={str(self._dec_mode).lower()}\n')
                 f.write(f'HEX_COLS={self._hex_cols}\n')
+                f.write(f'ECHO_ENABLED={str(self._echo_enabled).lower()}\n')
                 f.write(f'LOG_TO_FILE={str(self._log_to_file).lower()}\n')
                 f.write(f'MACROS_ENABLED={str(self._macros_enabled).lower()}\n')
                 f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
@@ -299,6 +301,7 @@ class SerialTerminal:
             if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
             if 'DEC_MODE' in cfg: self._dec_mode = cfg['DEC_MODE'].lower() == 'true'
             if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
+            if 'ECHO_ENABLED' in cfg: self._echo_enabled = cfg['ECHO_ENABLED'].lower() == 'true'
             if 'LOG_TO_FILE' in cfg: self._log_to_file = cfg['LOG_TO_FILE'].lower() == 'true'
             if 'LINE_SEND_MODE' in cfg:
                 self._line_send_mode = cfg['LINE_SEND_MODE'].lower() == 'true'
@@ -379,7 +382,8 @@ class SerialTerminal:
 
     def _print_config_info(self, header: str = "Config loaded:"):
         """Print all loaded config settings (output mode, logging, macros, etc.)."""
-        print(f"  {header}")
+        if header:
+            print(f"  {header}")
         print(f"  Baud rate : {self.baudrate}")
         print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
         cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
@@ -390,11 +394,35 @@ class SerialTerminal:
         else:
             out_mode = 'ASCII'
         print(f"  Output    : {out_mode}  ({cols_label} bytes/line)")
+        print(f"  Echo TX   : {'ON' if self._echo_enabled else 'OFF'}")
         print(f"  Logging   : {'ON' if self._log_to_file else 'OFF'}")
         print(f"  Macros    : {'ON (' + str(len(self._macros)) + ' defined)' if self._macros_enabled else 'OFF'}")
         if self._macros_enabled and self._macros:
             self._print_macros_lines()
         print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
+
+    def _echo_tx(self, data: bytes):
+        """Echo sent bytes to terminal when TX echo is enabled."""
+        if not self._echo_enabled or not data:
+            return
+
+        if self._hex_mode:
+            for b in data:
+                sys.stdout.write(f'{b:02X} ')
+        elif self._dec_mode:
+            for b in data:
+                sys.stdout.write(f'{b:03d} ')
+        else:
+            sys.stdout.write(data.decode('utf-8', errors='replace'))
+        sys.stdout.flush()
+
+    def _send_bytes(self, data: bytes):
+        """Send raw bytes and optionally echo exactly what was sent."""
+        if not (self.ser and self.ser.is_open and not self._in_menu):
+            return
+        # Echo immediately before sending so full TX payload is visible first.
+        self._echo_tx(data)
+        self.ser.write(data)
 
     def _send_macro_data(self, fmt: str, value: str):
         """Parse and send macro data based on format (ASC/DEC/HEX)."""
@@ -429,7 +457,7 @@ class SerialTerminal:
 
         if out:
             try:
-                self.ser.write(bytes(out))
+                self._send_bytes(bytes(out))
                 # sys.stdout.write(f"\r\n  Macro sent ({len(out)} byte(s))\r\n")
                 sys.stdout.flush()
             except serial.SerialException as e:
@@ -456,7 +484,7 @@ class SerialTerminal:
 
         if self.ser and self.ser.is_open and not self._in_menu:
             try:
-                self.ser.write(bytes(out))
+                self._send_bytes(bytes(out))
                 # sys.stdout.write(f"\r\n  Sent {len(out)} byte(s).\r\n")
                 sys.stdout.flush()
             except serial.SerialException as e:
@@ -563,6 +591,7 @@ class SerialTerminal:
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
         print(f"│  [d]  dec output  [{dec_state:<3}]         │")
         print(f"│  [w]  out cols    [{self._hex_cols:>3}]         │")
+        print(f"│  [e]  echo tx     [{'on ' if self._echo_enabled else 'off'}]         │")
         print(f"│  [l]  log to file [{'on ' if self._log_to_file else 'off'}]         │")
         print(f"│  [g]  macros      [{'on ' if self._macros_enabled else 'off'}]  ({len(self._macros):>2})   │")
         print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
@@ -620,6 +649,11 @@ class SerialTerminal:
             except (ValueError, KeyboardInterrupt):
                 print("  Unchanged.")
 
+        elif choice == 'e':
+            self._echo_enabled = not self._echo_enabled
+            state = "ON" if self._echo_enabled else "OFF"
+            print(f"  Echo TX: {state}")
+
         elif choice == 'l':
             new_state = not self._log_to_file
             if self._set_logging(new_state):
@@ -667,10 +701,12 @@ class SerialTerminal:
             hex_cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
             line_mode = "ON" if self._line_send_mode else "OFF"
             log_state = "ON" if self._log_to_file else "OFF"
+            echo_state = "ON" if self._echo_enabled else "OFF"
             print(f"\n  Port      : {self.port or '—'}")
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             print(f"  Output    : {out_mode}  ({hex_cols_label} bytes/line)")
+            print(f"  Echo TX   : {echo_state}")
             print(f"  Logging   : {log_state}{f'  ({self._log_file_path})' if self._log_file_path else ''}")
             macros_status = f"ON ({len(self._macros)} defined)" if self._macros_enabled else "OFF"
             print(f"  Macros    : {macros_status}")
@@ -789,9 +825,9 @@ class SerialTerminal:
 
                         # Send CR as CR+LF (adjust if needed).
                         if ch == CR:
-                            self.ser.write(CR + LF)
+                            self._send_bytes(CR + LF)
                         else:
-                            self.ser.write(ch)
+                            self._send_bytes(ch)
                     except serial.SerialException as e:
                         print(f"\n✖  Send error: {e}")
 
