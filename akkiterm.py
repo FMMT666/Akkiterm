@@ -21,10 +21,16 @@ Controls:
     "documented and user-friendly". Well, here we are. Enjoy the overkill docstring!
 """
 
+
+AKKITERM_VERSION = "0.20"
+
+
+
 import sys
 import os
 import threading
 import time
+from datetime import datetime
 import serial
 import serial.tools.list_ports
 
@@ -91,6 +97,7 @@ CR  = b'\r'
 LF  = b'\n'
 
 CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akkiterm.cfg')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ----------------------------------------------------------------------
 # --- Helper functions
@@ -100,7 +107,7 @@ def clear_screen():
 
 def banner():
     print("╔═════════════════════════════════╗")
-    print("║         Akkiterm  v0.11         ║")
+    print("║         Akkiterm  v" + AKKITERM_VERSION + "         ║")
     print("║   ESC = menu  |  type to comm   ║")
     print("╚═════════════════════════════════╝")
     print()
@@ -185,7 +192,64 @@ class SerialTerminal:
         self._line_send_mode = False
         self._line_send_format  = 'dec'
         self._line_input_buf = bytearray()
+        self._log_to_file    = False
+        self._log_file       = None
+        self._log_file_path  = ''
+        self._log_lock       = threading.Lock()
+        self._macros         = {}  # dict: char → (format_str, value_str), e.g. ('ASC', 'Hello')
+        self._macros_enabled = False
         self._reader_thread: threading.Thread | None = None
+
+    def _make_log_file_path(self) -> str:
+        timestamp = datetime.now().strftime('%y%m%d%H%M%S')
+        return os.path.join(BASE_DIR, f'akkiterm_{timestamp}.log')
+
+    def _start_logging(self) -> bool:
+        if self._log_file:
+            return True
+        path = self._make_log_file_path()
+        try:
+            self._log_file = open(path, 'w', encoding='utf-8', newline='')
+            self._log_file_path = path
+            return True
+        except OSError as e:
+            self._log_file = None
+            self._log_file_path = ''
+            print(f'  ✖  Could not open log file: {e}')
+            return False
+
+    def _stop_logging(self):
+        with self._log_lock:
+            if self._log_file:
+                self._log_file.close()
+            self._log_file = None
+            self._log_file_path = ''
+
+    def _set_logging(self, enabled: bool) -> bool:
+        if enabled:
+            if not self._start_logging():
+                self._log_to_file = False
+                return False
+            self._log_to_file = True
+            return True
+
+        self._log_to_file = False
+        self._stop_logging()
+        return True
+
+    def _write_log(self, text: str):
+        if not self._log_to_file or not text:
+            return
+        with self._log_lock:
+            if not self._log_file:
+                return
+            try:
+                self._log_file.write(text)
+                self._log_file.flush()
+            except OSError as e:
+                self._log_to_file = False
+                print(f"\n✖  Log write error: {e}")
+                self._stop_logging()
 
     # --- Config save / load
     def save_config(self):
@@ -201,8 +265,13 @@ class SerialTerminal:
                 f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
                 f.write(f'DEC_MODE={str(self._dec_mode).lower()}\n')
                 f.write(f'HEX_COLS={self._hex_cols}\n')
+                f.write(f'LOG_TO_FILE={str(self._log_to_file).lower()}\n')
+                f.write(f'MACROS_ENABLED={str(self._macros_enabled).lower()}\n')
                 f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
                 f.write(f'LINE_SEND_FORMAT={self._line_send_format}\n')
+                # Macros always last, sorted alphabetically by key for readability and maintainability
+                for key, (fmt, value) in sorted(self._macros.items()):
+                    f.write(f'MACRO_{key}_{fmt}={value}\n')
             print(f'  Settings saved to {CFG_FILE}')
         except OSError as e:
             print(f'  \u2716  Could not save settings: {e}')
@@ -230,10 +299,21 @@ class SerialTerminal:
             if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
             if 'DEC_MODE' in cfg: self._dec_mode = cfg['DEC_MODE'].lower() == 'true'
             if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
+            if 'LOG_TO_FILE' in cfg: self._log_to_file = cfg['LOG_TO_FILE'].lower() == 'true'
             if 'LINE_SEND_MODE' in cfg:
                 self._line_send_mode = cfg['LINE_SEND_MODE'].lower() == 'true'
             if 'LINE_SEND_FORMAT' in cfg and cfg['LINE_SEND_FORMAT'].lower() in ('dec', 'hex'):
                 self._line_send_format = cfg['LINE_SEND_FORMAT'].lower()
+            if 'MACROS_ENABLED' in cfg: self._macros_enabled = cfg['MACROS_ENABLED'].lower() == 'true'
+            # Parse macros: MACRO_<KEY>_<FORMAT>=<VALUE>
+            for key, val in cfg.items():
+                if key.startswith('MACRO_'):
+                    parts = key.split('_')
+                    if len(parts) >= 3:
+                        macro_key = parts[1]
+                        macro_fmt = '_'.join(parts[2:]).upper()
+                        if macro_fmt in ('ASC', 'DEC', 'HEX') and len(macro_key) == 1 and 32 <= ord(macro_key) <= 126:
+                            self._macros[macro_key] = (macro_fmt, val)
             # If both are enabled by malformed/legacy config, prefer HEX.
             if self._hex_mode and self._dec_mode:
                 self._dec_mode = False
@@ -264,6 +344,98 @@ class SerialTerminal:
             return None
         return value
 
+    def _parse_byte_token_explicit(self, token: str, base: int) -> int | None:
+        """Parse a byte token in given base (10 or 16). Return 0..255 or None."""
+        if not token:
+            return None
+        token_l = token.lower().strip()
+
+        if base == 16:
+            if not all(c in '0123456789abcdef' for c in token_l):
+                return None
+        else:
+            if not token_l.isdigit():
+                return None
+
+        try:
+            value = int(token_l, base)
+        except ValueError:
+            return None
+        if not (0 <= value <= 255):
+            return None
+        return value
+
+    def _format_macros_list(self) -> str:
+        """Return a formatted string of all defined macros (e.g., '2→ASC, L→HEX, w→DEC')."""
+        if not self._macros:
+            return "(none)"
+        items = [f"{key}→{fmt}" for key, (fmt, _) in sorted(self._macros.items())]
+        return ", ".join(items)
+
+    def _print_macros_lines(self):
+        """Print each defined macro on its own line with indentation."""
+        for key, (fmt, value) in sorted(self._macros.items()):
+            print(f"         {key}→{fmt}: {value}")
+
+    def _print_config_info(self, header: str = "Config loaded:"):
+        """Print all loaded config settings (output mode, logging, macros, etc.)."""
+        print(f"  {header}")
+        print(f"  Baud rate : {self.baudrate}")
+        print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
+        cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
+        if self._hex_mode:
+            out_mode = 'HEX'
+        elif self._dec_mode:
+            out_mode = 'DEC'
+        else:
+            out_mode = 'ASCII'
+        print(f"  Output    : {out_mode}  ({cols_label} bytes/line)")
+        print(f"  Logging   : {'ON' if self._log_to_file else 'OFF'}")
+        print(f"  Macros    : {'ON (' + str(len(self._macros)) + ' defined)' if self._macros_enabled else 'OFF'}")
+        if self._macros_enabled and self._macros:
+            self._print_macros_lines()
+        print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
+
+    def _send_macro_data(self, fmt: str, value: str):
+        """Parse and send macro data based on format (ASC/DEC/HEX)."""
+        if not (self.ser and self.ser.is_open and not self._in_menu):
+            return
+
+        out = bytearray()
+
+        if fmt == 'ASC':
+            # Treat as raw ASCII string
+            try:
+                out = bytearray(value.encode('utf-8'))
+            except Exception:
+                sys.stdout.write(f"\r\n  Macro ASC error: invalid encoding\r\n")
+                sys.stdout.flush()
+                return
+
+        elif fmt in ('DEC', 'HEX'):
+            # Parse tokens separated by spaces
+            tokens = value.split()
+            base = 16 if fmt == 'HEX' else 10
+            for token in tokens:
+                parsed = self._parse_byte_token_explicit(token, base)
+                if parsed is None:
+                    fmt_hint = "0..255" if fmt == 'DEC' else "00..FF"
+                    sys.stdout.write(f"\r\n  Macro {fmt} error: invalid token '{token}' (expected {fmt_hint})\r\n")
+                    sys.stdout.flush()
+                    return
+                out.append(parsed)
+        else:
+            return
+
+        if out:
+            try:
+                self.ser.write(bytes(out))
+                # sys.stdout.write(f"\r\n  Macro sent ({len(out)} byte(s))\r\n")
+                sys.stdout.flush()
+            except serial.SerialException as e:
+                sys.stdout.write(f"\r\n✖  Macro send error: {e}\r\n")
+                sys.stdout.flush()
+
     def _send_collected_line(self):
         """Parse and send buffered line as raw bytes."""
         line = self._line_input_buf.decode('ascii', errors='ignore').strip()
@@ -285,7 +457,7 @@ class SerialTerminal:
         if self.ser and self.ser.is_open and not self._in_menu:
             try:
                 self.ser.write(bytes(out))
-                sys.stdout.write(f"\r\n  Sent {len(out)} byte(s).\r\n")
+                # sys.stdout.write(f"\r\n  Sent {len(out)} byte(s).\r\n")
                 sys.stdout.flush()
             except serial.SerialException as e:
                 sys.stdout.write(f"\r\n✖  Send error: {e}\r\n")
@@ -334,25 +506,38 @@ class SerialTerminal:
             try:
                 data = self.ser.read(256)
                 if data:
+                    log_text = ''
                     if self._hex_mode:
+                        parts = []
                         for b in data:
-                            sys.stdout.write(f'{b:02X} ')
+                            part = f'{b:02X} '
+                            parts.append(part)
+                            sys.stdout.write(part)
                             if self._hex_cols > 0:
                                 self._hex_col_count += 1
                                 if self._hex_col_count >= self._hex_cols:
                                     sys.stdout.write('\r\n')
+                                    parts.append('\r\n')
                                     self._hex_col_count = 0
+                        log_text = ''.join(parts)
                     elif self._dec_mode:
+                        parts = []
                         for b in data:
-                            sys.stdout.write(f'{b:03d} ')
+                            part = f'{b:03d} '
+                            parts.append(part)
+                            sys.stdout.write(part)
                             if self._hex_cols > 0:
                                 self._hex_col_count += 1
                                 if self._hex_col_count >= self._hex_cols:
                                     sys.stdout.write('\r\n')
+                                    parts.append('\r\n')
                                     self._hex_col_count = 0
+                        log_text = ''.join(parts)
                     else:
                         # Print raw bytes as text (UTF-8; replace unknown bytes).
-                        sys.stdout.write(data.decode('utf-8', errors='replace'))
+                        log_text = data.decode('utf-8', errors='replace')
+                        sys.stdout.write(log_text)
+                    self._write_log(log_text)
                     sys.stdout.flush()
             except serial.SerialException:
                 if self._running:
@@ -378,6 +563,8 @@ class SerialTerminal:
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
         print(f"│  [d]  dec output  [{dec_state:<3}]         │")
         print(f"│  [w]  out cols    [{self._hex_cols:>3}]         │")
+        print(f"│  [l]  log to file [{'on ' if self._log_to_file else 'off'}]         │")
+        print(f"│  [g]  macros      [{'on ' if self._macros_enabled else 'off'}]  ({len(self._macros):>2})   │")
         print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
         print(f"│  [f]  line format [{self._line_send_format:<3}]         │")
         print("│  [s]  save settings             │")
@@ -433,6 +620,21 @@ class SerialTerminal:
             except (ValueError, KeyboardInterrupt):
                 print("  Unchanged.")
 
+        elif choice == 'l':
+            new_state = not self._log_to_file
+            if self._set_logging(new_state):
+                state = "ON" if self._log_to_file else "OFF"
+                print(f"  Log to file: {state}")
+                if self._log_to_file:
+                    print(f"  File: {self._log_file_path}")
+
+        elif choice == 'g':
+            self._macros_enabled = not self._macros_enabled
+            state = "ON" if self._macros_enabled else "OFF"
+            print(f"  Macros: {state}  ({len(self._macros)} defined)")
+            if self._macros_enabled and self._macros:
+                self._print_macros_lines()
+
         elif choice == 'm':
             self._line_send_mode = not self._line_send_mode
             self._line_input_buf.clear()
@@ -464,10 +666,14 @@ class SerialTerminal:
                 out_mode = "ASCII"
             hex_cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
             line_mode = "ON" if self._line_send_mode else "OFF"
+            log_state = "ON" if self._log_to_file else "OFF"
             print(f"\n  Port      : {self.port or '—'}")
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             print(f"  Output    : {out_mode}  ({hex_cols_label} bytes/line)")
+            print(f"  Logging   : {log_state}{f'  ({self._log_file_path})' if self._log_file_path else ''}")
+            macros_status = f"ON ({len(self._macros)} defined)" if self._macros_enabled else "OFF"
+            print(f"  Macros    : {macros_status}")
             print(f"  Line send : {line_mode}  ({self._line_send_format.upper()})")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")
@@ -499,28 +705,26 @@ class SerialTerminal:
         if saved_port and saved_port in available:
             print(f"  Config loaded:")
             print(f"  Port      : {saved_port}")
-            print(f"  Baud rate : {self.baudrate}")
-            print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
-            cols_label = "no wrap" if self._hex_cols == 0 else str(self._hex_cols)
-            if self._hex_mode:
-                out_mode = 'HEX'
-            elif self._dec_mode:
-                out_mode = 'DEC'
-            else:
-                out_mode = 'ASCII'
-            print(f"  Output    : {out_mode}  ({cols_label} bytes/line)")
-            print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
+            self._print_config_info("")
             print()
             port = saved_port
         else:
             if saved_port:
                 print(f"  \u26a0  Saved port {saved_port!r} not available, please select manually.\n")
+                self._print_config_info("Config loaded (port unavailable):")
+                print()
             port = select_port()
             if not port:
                 sys.exit(0)
 
         if not self.connect(port):
             sys.exit(1)
+
+        if self._log_to_file and not self._start_logging():
+            print("  Logging disabled due to file error.")
+            self._log_to_file = False
+        elif self._log_to_file:
+            print(f"  Logging to: {self._log_file_path}")
 
         self._running = True
 
@@ -552,6 +756,14 @@ class SerialTerminal:
                 # Send input to serial port.
                 if self.ser and self.ser.is_open and not self._in_menu:
                     try:
+                        # Check for macro first (only in normal mode, not in line_send_mode)
+                        if not self._line_send_mode and self._macros_enabled and len(ch) == 1:
+                            ch_char = chr(ch[0])
+                            if ch_char in self._macros:
+                                fmt, value = self._macros[ch_char]
+                                self._send_macro_data(fmt, value)
+                                continue
+
                         if self._line_send_mode:
                             # Collect bytes as text tokens and send parsed bytes on Enter.
                             if ch in (CR, LF):
@@ -591,6 +803,7 @@ class SerialTerminal:
     def stop(self):
         self._running = False
         _set_raw(False)
+        self._stop_logging()
         self.disconnect()
         print("\n\nBis bald, aber es eilt nicht.\n")
 

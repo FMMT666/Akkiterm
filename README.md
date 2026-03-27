@@ -12,7 +12,9 @@ Works on all platforms which support Python and PySerial.
 ## FEATURES (yet)
 
   - ASCII
-  - HEX/DEV with optional formatting
+  - HEX/DEC with optional formatting
+  - log received output to local file
+  - macros: configurable key bindings (ASCII/DEC/HEX)
   - local folder config save & autoload
   - console (yeah \o/)
   - many more to come
@@ -85,26 +87,49 @@ and store it, together with akkiterm.py, in a directory within your path variabl
 ---
 ## USAGE
 
-This should be self-explanatory (for now).  
-Press ESC for the menu.
+Most should be self-explanatory (for now). Press ESC for the menu.  
 
-In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded
-automatically.
+In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded automatically.
+
+
+### MACROS
+
+Akkiterm supports sending messages/data with hotkeys if defined.  
+So far, macros can be defined in the config file:
+
+    MACRO_<key>_<TYPE>=<macro/data to be sent>
+
+Type can be one off:
+
+    ASC -> ASCII text
+    DEC -> decimal numbers, to be sent as (character) codes
+    HEX -> hexadecimal numbers, to be sent as (character) codes
+
+Example:
+
+    MACRO_1_ASC=Henlo, i bims die 1
+    MACRO_2_ASC=Und i di 2
+    MACRO_3_ASC=Drei, angenehm.
+    MACRO_d_DEC=97 98 99 100 101
+    MACRO_h_HEX=33 34 35 3a
 
 
 ---
 ## TODO
-    - logging to file
-    - optional delimiter for formatted output (e.g. CSV)
     - send files
-    - send macros
     - trigger
     - new line on/off
+    - optional delimiter for formatted output (e.g. CSV)
     - much more
 
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/27 (continued):
+    - added macro system (configurable key bindings with ASC/DEC/HEX data)
+    - config format: MACRO_<key>_<format>=<value> (e.g., MACRO_2_ASC=Hello, MACRO_L_HEX=aa bb e4)
+    - added logging of received output to local file
 
 ### CHANGES 2026/03/25:
     - added DEC output mode (formatted, 3 digits with leading zeros)
