@@ -1,0 +1,9 @@
+*
+
+!.gitignore
+
+!akkiterm.cfg
+
+!test_heinz.asc
+!test_heinz.dec
+!test_heinz.hex

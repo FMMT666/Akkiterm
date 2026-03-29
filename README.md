@@ -4,7 +4,12 @@ Akkiterm
 A quick and dirty serial terminal application for the console, for now.  
 Useful for communication with MCUs, debugging, etc.  
 
-Works on all platforms which support Python and PySerial. 
+Works on all platforms which support Python and PySerial:
+
+  - macOS
+  - Linux
+  - Windoze
+  - ...
 
 ---------------------------------------------------------------------------------------------
 
@@ -97,10 +102,7 @@ Most should be self-explanatory (for now). Press ESC for the menu.
 
 In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded automatically.
 
-Send file flow:
-
-Send file: ESC → ```[u]``` (see SEND FILE section below for details).
-
+[...]
 
 ### MACROS
 
@@ -128,6 +130,7 @@ With this, pressing
   - "d" will send the character codes 97..101, resulting in '```abcde```'.  
   - "h" will send the character codes 0x33, 0x34, 0x35, 0x3a, which should give '```123:```'.
 
+The provided "example" directory contains a sample configuration file with a couple of macros defined.
 
 ### SEND FILE
 
@@ -154,6 +157,8 @@ The dialog asks for:
 Filter and format are remembered across sessions (```FILE_SEND_FILTER```, ```FILE_SEND_FORMAT```,
 ```FILE_SEND_ASC_CR``` in ```akkiterm.cfg```).
 
+Three example files are provided in the "examples" directory.
+
 ---
 ## TODO
     - trigger
@@ -164,6 +169,10 @@ Filter and format are remembered across sessions (```FILE_SEND_FILTER```, ```FIL
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/30:
+    - added sample config file with macros
+    - added three samples for sending ASC, DEC or HEX data files.
 
 ### CHANGES 2026/03/29:
     - added send file dialog with wildcard filter (*.txt; *data*; *.*)

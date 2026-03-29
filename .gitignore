@@ -1,9 +1,9 @@
 *
 
 !/images
-!/images/.gitignore
-!/images/start.png
-!/images/menu.png
+!/images/*
+!/examples
+!/examples/*
 
 !.gitignore
 
