@@ -22,12 +22,13 @@ Controls:
 """
 
 
-AKKITERM_VERSION = "0.20"
+AKKITERM_VERSION = "0.30"
 
 
 
 import sys
 import os
+import fnmatch
 import threading
 import time
 from datetime import datetime
@@ -98,6 +99,7 @@ LF  = b'\n'
 
 CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akkiterm.cfg')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_SELECT_KEYS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 # ----------------------------------------------------------------------
 # --- Helper functions
@@ -199,6 +201,9 @@ class SerialTerminal:
         self._log_lock       = threading.Lock()
         self._macros         = {}  # dict: char → (format_str, value_str), e.g. ('ASC', 'Hello')
         self._macros_enabled = False
+        self._file_send_filter = '*.*'
+        self._file_send_format = 'asc'
+        self._file_send_asc_cr = False
         self._reader_thread: threading.Thread | None = None
 
     def _make_log_file_path(self) -> str:
@@ -269,6 +274,9 @@ class SerialTerminal:
                 f.write(f'ECHO_ENABLED={str(self._echo_enabled).lower()}\n')
                 f.write(f'LOG_TO_FILE={str(self._log_to_file).lower()}\n')
                 f.write(f'MACROS_ENABLED={str(self._macros_enabled).lower()}\n')
+                f.write(f'FILE_SEND_FILTER={self._file_send_filter}\n')
+                f.write(f'FILE_SEND_FORMAT={self._file_send_format}\n')
+                f.write(f'FILE_SEND_ASC_CR={str(self._file_send_asc_cr).lower()}\n')
                 f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
                 f.write(f'LINE_SEND_FORMAT={self._line_send_format}\n')
                 # Macros always last, sorted alphabetically by key for readability and maintainability
@@ -308,6 +316,12 @@ class SerialTerminal:
             if 'LINE_SEND_FORMAT' in cfg and cfg['LINE_SEND_FORMAT'].lower() in ('dec', 'hex'):
                 self._line_send_format = cfg['LINE_SEND_FORMAT'].lower()
             if 'MACROS_ENABLED' in cfg: self._macros_enabled = cfg['MACROS_ENABLED'].lower() == 'true'
+            if 'FILE_SEND_FILTER' in cfg and cfg['FILE_SEND_FILTER']:
+                self._file_send_filter = cfg['FILE_SEND_FILTER']
+            if 'FILE_SEND_FORMAT' in cfg and cfg['FILE_SEND_FORMAT'].lower() in ('asc', 'dec', 'hex'):
+                self._file_send_format = cfg['FILE_SEND_FORMAT'].lower()
+            if 'FILE_SEND_ASC_CR' in cfg:
+                self._file_send_asc_cr = cfg['FILE_SEND_ASC_CR'].lower() == 'true'
             # Parse macros: MACRO_<KEY>_<FORMAT>=<VALUE>
             for key, val in cfg.items():
                 if key.startswith('MACRO_'):
@@ -399,6 +413,8 @@ class SerialTerminal:
         print(f"  Macros    : {'ON (' + str(len(self._macros)) + ' defined)' if self._macros_enabled else 'OFF'}")
         if self._macros_enabled and self._macros:
             self._print_macros_lines()
+        cr_label = " +CR" if self._file_send_format == 'asc' and self._file_send_asc_cr else ""
+        print(f"  Send file : {self._file_send_format.upper()}{cr_label}  (filter: {self._file_send_filter})")
         print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
 
     def _echo_tx(self, data: bytes):
@@ -416,13 +432,151 @@ class SerialTerminal:
             sys.stdout.write(data.decode('utf-8', errors='replace'))
         sys.stdout.flush()
 
-    def _send_bytes(self, data: bytes):
+    def _send_bytes(self, data: bytes, allow_in_menu: bool = False):
         """Send raw bytes and optionally echo exactly what was sent."""
-        if not (self.ser and self.ser.is_open and not self._in_menu):
+        if not (self.ser and self.ser.is_open):
+            return
+        if self._in_menu and not allow_in_menu:
             return
         # Echo immediately before sending so full TX payload is visible first.
         self._echo_tx(data)
         self.ser.write(data)
+
+    def _resolve_file_patterns(self, pattern_input: str) -> list[str]:
+        """Split semicolon-separated wildcard filters and normalize defaults."""
+        raw = (pattern_input or '').strip()
+        if not raw:
+            raw = '*.*'
+
+        patterns = [p.strip() for p in raw.split(';') if p.strip()]
+        if not patterns:
+            patterns = ['*.*']
+
+        # In shell-style matching, '*' behaves like "everything" and is often what users
+        # expect from '*.*' in this small dialog.
+        return ['*' if p == '*.*' else p for p in patterns]
+
+    def _find_matching_files(self, pattern_input: str) -> list[str]:
+        """Return matching files from BASE_DIR for semicolon-separated wildcard patterns."""
+        patterns = self._resolve_file_patterns(pattern_input)
+        matches = []
+        for name in sorted(os.listdir(BASE_DIR)):
+            full_path = os.path.join(BASE_DIR, name)
+            if not os.path.isfile(full_path):
+                continue
+            if any(fnmatch.fnmatch(name, pat) for pat in patterns):
+                matches.append(name)
+        return matches
+
+    def _bytes_from_file_content(self, file_path: str, send_format: str) -> bytes | None:
+        """Load and parse file content according to ASC/DEC/HEX mode."""
+        fmt = send_format.lower()
+
+        if fmt == 'asc':
+            try:
+                with open(file_path, 'rb') as f:
+                    return f.read()
+            except OSError as e:
+                print(f"  ✖  Could not read file: {e}")
+                return None
+
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                text = f.read()
+        except OSError as e:
+            print(f"  ✖  Could not read file: {e}")
+            return None
+
+        base = 16 if fmt == 'hex' else 10
+        out = bytearray()
+        for token in text.split():
+            value = self._parse_byte_token_explicit(token, base)
+            if value is None:
+                hint = '00..FF' if fmt == 'hex' else '0..255'
+                print(f"  ✖  Invalid token in file: {token!r} (expected {fmt.upper()} {hint})")
+                return None
+            out.append(value)
+        return bytes(out)
+
+    def _send_file_dialog(self):
+        """Interactive file-send dialog with wildcard filter and one-key selection."""
+        if not (self.ser and self.ser.is_open):
+            print("  ✖  Not connected.")
+            return
+
+        pattern = input(f"  File filter [default: {self._file_send_filter}]: ").strip()
+        if pattern:
+            self._file_send_filter = pattern
+        files = self._find_matching_files(self._file_send_filter)
+        if not files:
+            print(f"  No matching files for filter: {self._file_send_filter}")
+            return
+
+        send_fmt = input(f"  Send format [asc/dec/hex, default: {self._file_send_format}]: ").strip().lower()
+        if send_fmt:
+            if send_fmt not in ('asc', 'dec', 'hex'):
+                print("  Invalid format.")
+                return
+            self._file_send_format = send_fmt
+
+        if self._file_send_format == 'asc':
+            default_cr = 'y' if self._file_send_asc_cr else 'n'
+            cr_choice = input(f"  Normalize LF→CRLF in ASC file [y/n, default: {default_cr}]: ").strip().lower()
+            if cr_choice:
+                if cr_choice in ('y', 'yes', '1', 'true', 'on'):
+                    self._file_send_asc_cr = True
+                elif cr_choice in ('n', 'no', '0', 'false', 'off'):
+                    self._file_send_asc_cr = False
+                else:
+                    print("  Invalid option.")
+                    return
+
+        max_items = min(len(files), len(FILE_SELECT_KEYS))
+        if len(files) > len(FILE_SELECT_KEYS):
+            print(f"  Showing first {len(FILE_SELECT_KEYS)} files (filter matched {len(files)}).")
+
+        print("\n  Select file to send:")
+        key_to_file = {}
+        for idx in range(max_items):
+            key = FILE_SELECT_KEYS[idx]
+            name = files[idx]
+            full = os.path.join(BASE_DIR, name)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                size = -1
+            size_label = f"{size} B" if size >= 0 else "size ?"
+            print(f"    [{key}]  {name:<30} {size_label}")
+            key_to_file[key] = full
+
+        selected = input("  Key [0-9,a-z,A-Z] (Enter=cancel): ").strip()
+        if not selected:
+            print("  Canceled.")
+            return
+        if len(selected) != 1 or selected not in key_to_file:
+            print("  Invalid selection key.")
+            return
+
+        file_path = key_to_file[selected]
+        payload = self._bytes_from_file_content(file_path, self._file_send_format)
+        if payload is None:
+            return
+
+        send_payload = payload
+        if self._file_send_format == 'asc' and self._file_send_asc_cr:
+            # Normalize line endings: replace bare \n with \r\n (avoid double \r\r\n)
+            send_payload = send_payload.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+
+        if not send_payload:
+            print("  Selected file is empty. Nothing sent.")
+            return
+
+        try:
+            self._send_bytes(send_payload, allow_in_menu=True)
+            cr_info = " +CR" if self._file_send_format == 'asc' and self._file_send_asc_cr else ""
+            print(f"  Sent {len(send_payload)} byte(s) from: {os.path.basename(file_path)} ({self._file_send_format.upper()}{cr_info})")
+        except serial.SerialException as e:
+            print(f"  ✖  File send error: {e}")
 
     def _send_macro_data(self, fmt: str, value: str):
         """Parse and send macro data based on format (ASC/DEC/HEX)."""
@@ -594,6 +748,7 @@ class SerialTerminal:
         print(f"│  [e]  echo tx     [{'on ' if self._echo_enabled else 'off'}]         │")
         print(f"│  [l]  log to file [{'on ' if self._log_to_file else 'off'}]         │")
         print(f"│  [g]  macros      [{'on ' if self._macros_enabled else 'off'}]  ({len(self._macros):>2})   │")
+        print(f"│  [u]  send file   [{self._file_send_format:<3}]         │")
         print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
         print(f"│  [f]  line format [{self._line_send_format:<3}]         │")
         print("│  [s]  save settings             │")
@@ -689,6 +844,9 @@ class SerialTerminal:
             elif line_format:
                 print("  Invalid format.")
 
+        elif choice == 'u':
+            self._send_file_dialog()
+
         elif choice == 'i':
             connected = self.ser and self.ser.is_open
             status = "Connected ✔" if connected else "Disconnected ✖"
@@ -710,6 +868,8 @@ class SerialTerminal:
             print(f"  Logging   : {log_state}{f'  ({self._log_file_path})' if self._log_file_path else ''}")
             macros_status = f"ON ({len(self._macros)} defined)" if self._macros_enabled else "OFF"
             print(f"  Macros    : {macros_status}")
+            cr_label = " +CR" if self._file_send_format == 'asc' and self._file_send_asc_cr else ""
+            print(f"  Send file : {self._file_send_format.upper()}{cr_label}  (filter: {self._file_send_filter})")
             print(f"  Line send : {line_mode}  ({self._line_send_format.upper()})")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")

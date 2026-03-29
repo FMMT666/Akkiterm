@@ -15,6 +15,7 @@ Works on all platforms which support Python and PySerial.
   - HEX/DEC with optional formatting
   - log received output to local file
   - macros: configurable key bindings (ASCII/DEC/HEX)
+  - send file (ASCII/DEC/HEX) with wildcard filter + one-key selection
   - local folder config save & autoload
   - local TX echo
   - console (yeah \o/)
@@ -31,6 +32,10 @@ Startup with ```akkiterm.cfg``` in local path:
 The menu:  
 
 ![menu](images/menu.png)  
+
+Send file options:
+
+![menu](images/sendfile.png)  
 
 [...]
 
@@ -92,6 +97,10 @@ Most should be self-explanatory (for now). Press ESC for the menu.
 
 In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded automatically.
 
+Send file flow:
+
+Send file: ESC → ```[u]``` (see SEND FILE section below for details).
+
 
 ### MACROS
 
@@ -120,9 +129,33 @@ With this, pressing
   - "h" will send the character codes 0x33, 0x34, 0x35, 0x3a, which should give '```123:```'.
 
 
+### SEND FILE
+
+Akkiterm can send a file from the local directory via ESC → ```[u]```.
+
+The dialog asks for:
+
+1. **File filter** — wildcard pattern(s), semicolon-separated, matched against the local directory.  
+    Examples: ```*.txt```, ```*data*```, ```*.hex; *.dec```, ```*.*``` (default, matches everything)
+
+2. **Send format**:
+
+         asc  -> file is sent as raw bytes (binary/text), unchanged
+         dec  -> file is parsed as whitespace-separated decimal values (0..255)
+         hex  -> file is parsed as whitespace-separated hexadecimal values (00..FF)
+
+3. **Normalize LF→CRLF** (ASC only) — replaces every bare ```\n``` with ```\r\n``` before sending.  
+    Useful when the target expects CR+LF line endings.  
+    For DEC and HEX files, simply include ```13 10``` (DEC) or ```0d 0a``` (HEX) tokens where needed.
+
+4. **File selection** — matching files are listed and assigned a key (```0-9```, ```a-z```, ```A-Z```).  
+    Press the corresponding key to send, or Enter to cancel.
+
+Filter and format are remembered across sessions (```FILE_SEND_FILTER```, ```FILE_SEND_FORMAT```,
+```FILE_SEND_ASC_CR``` in ```akkiterm.cfg```).
+
 ---
 ## TODO
-    - send files
     - trigger
     - new line on/off
     - optional delimiter for formatted output (e.g. CSV)
@@ -131,6 +164,12 @@ With this, pressing
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/29:
+    - added send file dialog with wildcard filter (*.txt; *data*; *.*)
+    - added one-key file selection (0-9, a-z, A-Z)
+    - added file send formats ASC/DEC/HEX
+    - added optional ASC append CR for file send
 
 ### CHANGES 2026/03/28:
     - added local TX echo
