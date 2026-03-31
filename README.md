@@ -23,6 +23,7 @@ Works on all platforms which support Python and PySerial:
   - send file (ASCII/DEC/HEX) with wildcard filter + one-key selection
   - local folder config save & autoload
   - local TX echo
+  - new line mode (LF->CRLF)
   - console (yeah \o/)
   - many more to come
   - ...
@@ -169,6 +170,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/03/31:
+    - added new line mode (LF->CRLF)
 
 ### CHANGES 2026/03/30:
     - added sample config file with macros

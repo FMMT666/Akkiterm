@@ -194,6 +194,8 @@ class SerialTerminal:
         self._line_send_mode = False
         self._line_send_format  = 'dec'
         self._line_input_buf = bytearray()
+        self._new_line_mode  = False
+        self._rx_prev_was_cr = False
         self._echo_enabled   = False
         self._log_to_file    = False
         self._log_file       = None
@@ -271,6 +273,7 @@ class SerialTerminal:
                 f.write(f'HEX_MODE={str(self._hex_mode).lower()}\n')
                 f.write(f'DEC_MODE={str(self._dec_mode).lower()}\n')
                 f.write(f'HEX_COLS={self._hex_cols}\n')
+                f.write(f'NEW_LINE_MODE={str(self._new_line_mode).lower()}\n')
                 f.write(f'ECHO_ENABLED={str(self._echo_enabled).lower()}\n')
                 f.write(f'LOG_TO_FILE={str(self._log_to_file).lower()}\n')
                 f.write(f'MACROS_ENABLED={str(self._macros_enabled).lower()}\n')
@@ -309,6 +312,7 @@ class SerialTerminal:
             if 'HEX_MODE' in cfg: self._hex_mode = cfg['HEX_MODE'].lower() == 'true'
             if 'DEC_MODE' in cfg: self._dec_mode = cfg['DEC_MODE'].lower() == 'true'
             if 'HEX_COLS' in cfg: self._hex_cols = int(cfg['HEX_COLS'])
+            if 'NEW_LINE_MODE' in cfg: self._new_line_mode = cfg['NEW_LINE_MODE'].lower() == 'true'
             if 'ECHO_ENABLED' in cfg: self._echo_enabled = cfg['ECHO_ENABLED'].lower() == 'true'
             if 'LOG_TO_FILE' in cfg: self._log_to_file = cfg['LOG_TO_FILE'].lower() == 'true'
             if 'LINE_SEND_MODE' in cfg:
@@ -408,6 +412,7 @@ class SerialTerminal:
         else:
             out_mode = 'ASCII'
         print(f"  Output    : {out_mode}  ({cols_label} bytes/line)")
+        print(f"  New line  : {'ON' if self._new_line_mode else 'OFF'}  (LF→CRLF)")
         print(f"  Echo TX   : {'ON' if self._echo_enabled else 'OFF'}")
         print(f"  Logging   : {'ON' if self._log_to_file else 'OFF'}")
         print(f"  Macros    : {'ON (' + str(len(self._macros)) + ' defined)' if self._macros_enabled else 'OFF'}")
@@ -441,6 +446,22 @@ class SerialTerminal:
         # Echo immediately before sending so full TX payload is visible first.
         self._echo_tx(data)
         self.ser.write(data)
+
+    def _normalize_rx_newlines(self, text: str) -> str:
+        """Convert bare LF to CRLF for terminal output while preserving existing CRLF."""
+        if not self._new_line_mode or not text:
+            return text
+
+        out = []
+        prev_was_cr = self._rx_prev_was_cr
+        for ch in text:
+            if ch == '\n' and not prev_was_cr:
+                out.append('\r')
+            out.append(ch)
+            prev_was_cr = (ch == '\r')
+
+        self._rx_prev_was_cr = prev_was_cr
+        return ''.join(out)
 
     def _resolve_file_patterns(self, pattern_input: str) -> list[str]:
         """Split semicolon-separated wildcard filters and normalize defaults."""
@@ -657,6 +678,7 @@ class SerialTerminal:
                 timeout  = DEFAULT_TIMEOUT,
             )
             self.port = port
+            self._rx_prev_was_cr = False
             print(f"\n✔  Connected: {port}  |  "
                   f"{self.baudrate} Baud  |  "
                   f"{self.bytesize}"
@@ -717,8 +739,10 @@ class SerialTerminal:
                         log_text = ''.join(parts)
                     else:
                         # Print raw bytes as text (UTF-8; replace unknown bytes).
-                        log_text = data.decode('utf-8', errors='replace')
-                        sys.stdout.write(log_text)
+                        display_text = data.decode('utf-8', errors='replace')
+                        display_text = self._normalize_rx_newlines(display_text)
+                        log_text = display_text
+                        sys.stdout.write(display_text)
                     self._write_log(log_text)
                     sys.stdout.flush()
             except serial.SerialException:
@@ -745,6 +769,7 @@ class SerialTerminal:
         print(f"│  [x]  hex output  [{hex_state:<3}]         │")
         print(f"│  [d]  dec output  [{dec_state:<3}]         │")
         print(f"│  [w]  out cols    [{self._hex_cols:>3}]         │")
+        print(f"│  [n]  new line    [{'on ' if self._new_line_mode else 'off'}]         │")
         print(f"│  [e]  echo tx     [{'on ' if self._echo_enabled else 'off'}]         │")
         print(f"│  [l]  log to file [{'on ' if self._log_to_file else 'off'}]         │")
         print(f"│  [g]  macros      [{'on ' if self._macros_enabled else 'off'}]  ({len(self._macros):>2})   │")
@@ -803,6 +828,12 @@ class SerialTerminal:
                     print("  Invalid value.")
             except (ValueError, KeyboardInterrupt):
                 print("  Unchanged.")
+
+        elif choice == 'n':
+            self._new_line_mode = not self._new_line_mode
+            self._rx_prev_was_cr = False
+            state = "ON" if self._new_line_mode else "OFF"
+            print(f"  New line mode (LF→CRLF): {state}")
 
         elif choice == 'e':
             self._echo_enabled = not self._echo_enabled
@@ -864,6 +895,7 @@ class SerialTerminal:
             print(f"  Baud rate : {self.baudrate}")
             print(f"  Format    : {self.bytesize}{self.parity}{int(self.stopbits)}")
             print(f"  Output    : {out_mode}  ({hex_cols_label} bytes/line)")
+            print(f"  New line  : {'ON' if self._new_line_mode else 'OFF'}  (LF→CRLF)")
             print(f"  Echo TX   : {echo_state}")
             print(f"  Logging   : {log_state}{f'  ({self._log_file_path})' if self._log_file_path else ''}")
             macros_status = f"ON ({len(self._macros)} defined)" if self._macros_enabled else "OFF"
