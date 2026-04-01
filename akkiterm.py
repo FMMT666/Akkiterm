@@ -463,6 +463,29 @@ class SerialTerminal:
         self._rx_prev_was_cr = prev_was_cr
         return ''.join(out)
 
+    def color_test_matrix(self):
+        """Show a compact ANSI foreground/background color matrix."""
+        esc = "\x1b["
+        bg_names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+        left_width = 8
+        cell_width = 8
+        inner_width = left_width + len(bg_names) * cell_width
+
+        print()
+        print("┌" + "─" * inner_width + "┐")
+        print("│" + f"{'FG\\BG':<{left_width}}" + "".join(f"{name:^{cell_width}}" for name in bg_names) + "│")
+        print("├" + "─" * inner_width + "┤")
+
+        for fg in range(30, 38):
+            row = f"{fg:<{left_width}}"
+            for bg in range(40, 48):
+                visible = f"{fg}/{bg}".center(cell_width)
+                row += f"{esc}{fg};{bg}m{visible}{esc}0m"
+            print("│" + row + "│")
+
+        print("└" + "─" * inner_width + "┘")
+        input("  [Enter] to continue...")
+
     def _resolve_file_patterns(self, pattern_input: str) -> list[str]:
         """Split semicolon-separated wildcard filters and normalize defaults."""
         raw = (pattern_input or '').strip()
@@ -776,6 +799,7 @@ class SerialTerminal:
         print(f"│  [u]  send file   [{self._file_send_format:<3}]         │")
         print(f"│  [m]  line send   [{'on ' if self._line_send_mode else 'off'}]         │")
         print(f"│  [f]  line format [{self._line_send_format:<3}]         │")
+        print("│  [t]  test color                │")
         print("│  [s]  save settings             │")
         print("│  [q]  quit                      │")
         print("│  [Enter/Esc]  back              │")
@@ -874,6 +898,9 @@ class SerialTerminal:
                 print(f"  Line send format: {self._line_send_format.upper()}")
             elif line_format:
                 print("  Invalid format.")
+
+        elif choice == 't':
+            self.color_test_matrix()
 
         elif choice == 'u':
             self._send_file_dialog()

@@ -24,6 +24,7 @@ Works on all platforms which support Python and PySerial:
   - local folder config save & autoload
   - local TX echo
   - new line mode (LF->CRLF)
+  - maybe some colors
   - console (yeah \o/)
   - many more to come
   - ...
@@ -42,6 +43,10 @@ The menu:
 Send file options:
 
 ![menu](images/sendfile.png)  
+
+Maybe I'll add some colors:
+
+![menu](images/colortest.png)  
 
 [...]
 
@@ -162,14 +167,18 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
+    - colors
+    - show special chars (CR, LF, etc.)
     - trigger
-    - new line on/off
     - optional delimiter for formatted output (e.g. CSV)
     - much more
 
 
 ---
 ## NEWS
+
+### CHANGES 2026/04/01:
+    - added a color test function
 
 ### CHANGES 2026/03/31:
     - added new line mode (LF->CRLF)
