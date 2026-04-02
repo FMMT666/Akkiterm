@@ -24,7 +24,7 @@ Works on all platforms which support Python and PySerial:
   - local folder config save & autoload
   - local TX echo
   - new line mode (LF->CRLF)
-  - maybe some colors
+  - now in color
   - console (yeah \o/)
   - many more to come
   - ...
@@ -176,6 +176,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/04/02:
+    - added color selection for RX and TX echo
 
 ### CHANGES 2026/04/01:
     - added a color test function

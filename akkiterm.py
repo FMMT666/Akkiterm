@@ -22,7 +22,7 @@ Controls:
 """
 
 
-AKKITERM_VERSION = "0.30"
+AKKITERM_VERSION = "0.40"
 
 
 
@@ -206,6 +206,9 @@ class SerialTerminal:
         self._file_send_filter = '*.*'
         self._file_send_format = 'asc'
         self._file_send_asc_cr = False
+        self._color_rx = 39    # 39 = terminal default foreground (no custom RX color)
+        self._color_tx = 39    # 39 = terminal default foreground (no custom TX color)
+        self._color_menu = 37
         self._reader_thread: threading.Thread | None = None
 
     def _make_log_file_path(self) -> str:
@@ -282,6 +285,9 @@ class SerialTerminal:
                 f.write(f'FILE_SEND_ASC_CR={str(self._file_send_asc_cr).lower()}\n')
                 f.write(f'LINE_SEND_MODE={str(self._line_send_mode).lower()}\n')
                 f.write(f'LINE_SEND_FORMAT={self._line_send_format}\n')
+                f.write(f'COLOR_RX={self._color_rx}\n')
+                f.write(f'COLOR_TX={self._color_tx}\n')
+                f.write(f'COLOR_MENU={self._color_menu}\n')
                 # Macros always last, sorted alphabetically by key for readability and maintainability
                 for key, (fmt, value) in sorted(self._macros.items()):
                     f.write(f'MACRO_{key}_{fmt}={value}\n')
@@ -326,6 +332,27 @@ class SerialTerminal:
                 self._file_send_format = cfg['FILE_SEND_FORMAT'].lower()
             if 'FILE_SEND_ASC_CR' in cfg:
                 self._file_send_asc_cr = cfg['FILE_SEND_ASC_CR'].lower() == 'true'
+            if 'COLOR_RX' in cfg:
+                try:
+                    val = int(cfg['COLOR_RX'])
+                    if val == 39 or 30 <= val <= 37 or 90 <= val <= 97:
+                        self._color_rx = val
+                except ValueError:
+                    pass
+            if 'COLOR_TX' in cfg:
+                try:
+                    val = int(cfg['COLOR_TX'])
+                    if val == 39 or 30 <= val <= 37 or 90 <= val <= 97:
+                        self._color_tx = val
+                except ValueError:
+                    pass
+            if 'COLOR_MENU' in cfg:
+                try:
+                    val = int(cfg['COLOR_MENU'])
+                    if 30 <= val <= 37 or 90 <= val <= 97:
+                        self._color_menu = val
+                except ValueError:
+                    pass
             # Parse macros: MACRO_<KEY>_<FORMAT>=<VALUE>
             for key, val in cfg.items():
                 if key.startswith('MACRO_'):
@@ -429,13 +456,31 @@ class SerialTerminal:
 
         if self._hex_mode:
             for b in data:
-                sys.stdout.write(f'{b:02X} ')
+                self._write_tx(f'{b:02X} ')
         elif self._dec_mode:
             for b in data:
-                sys.stdout.write(f'{b:03d} ')
+                self._write_tx(f'{b:03d} ')
         else:
-            sys.stdout.write(data.decode('utf-8', errors='replace'))
+            self._write_tx(data.decode('utf-8', errors='replace'))
         sys.stdout.flush()
+
+    def _write_rx(self, text: str):
+        """Write RX text; apply ANSI foreground only when a custom RX color is set."""
+        if not text:
+            return
+        if (30 <= self._color_rx <= 37) or (90 <= self._color_rx <= 97):
+            sys.stdout.write(f'\x1b[{self._color_rx}m{text}\x1b[39m')
+        else:
+            sys.stdout.write(text)
+
+    def _write_tx(self, text: str):
+        """Write TX echo text; apply ANSI foreground only when a custom TX color is set."""
+        if not text:
+            return
+        if (30 <= self._color_tx <= 37) or (90 <= self._color_tx <= 97):
+            sys.stdout.write(f'\x1b[{self._color_tx}m{text}\x1b[39m')
+        else:
+            sys.stdout.write(text)
 
     def _send_bytes(self, data: bytes, allow_in_menu: bool = False):
         """Send raw bytes and optionally echo exactly what was sent."""
@@ -464,8 +509,19 @@ class SerialTerminal:
         return ''.join(out)
 
     def color_test_matrix(self):
-        """Show a compact ANSI foreground/background color matrix."""
+        """Show a compact ANSI foreground/background color matrix with color selection."""
         esc = "\x1b["
+        color_names = {
+            30: "black", 31: "red", 32: "green", 33: "yellow",
+            34: "blue", 35: "magenta", 36: "cyan", 37: "white",
+            90: "bright black", 91: "bright red", 92: "bright green", 93: "bright yellow",
+            94: "bright blue", 95: "bright magenta", 96: "bright cyan", 97: "bright white",
+            39: "default"
+        }
+        fg_rows = [
+            ('1', 30), ('2', 31), ('3', 32), ('4', 33), ('5', 34), ('6', 35), ('7', 36), ('8', 37),
+            ('a', 90), ('b', 91), ('c', 92), ('d', 93), ('e', 94), ('f', 95), ('g', 96), ('h', 97),
+        ]
         bg_names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
         left_width = 8
         cell_width = 8
@@ -473,18 +529,66 @@ class SerialTerminal:
 
         print()
         print("┌" + "─" * inner_width + "┐")
-        print("│" + f"{'FG\\BG':<{left_width}}" + "".join(f"{name:^{cell_width}}" for name in bg_names) + "│")
+        print("│" + f"{'':<{left_width}}" + "".join(f"{name:^{cell_width}}" for name in bg_names) + "│")
+        print("│" + f"{'   std':<{left_width}}" + "".join(f"{str(i):^{cell_width}}" for i in range(1, 9)) + "│")
+        print("│" + f"{'bright':<{left_width}}" + "".join(f"{ch:^{cell_width}}" for ch in 'abcdefgh') + "│")
         print("├" + "─" * inner_width + "┤")
 
-        for fg in range(30, 38):
-            row = f"{fg:<{left_width}}"
-            for bg in range(40, 48):
+        for fg_label, fg in fg_rows:
+            row = f"{fg_label:<{left_width}}"
+            bg_start = 100 if fg >= 90 else 40
+            for bg in range(bg_start, bg_start + 8):
                 visible = f"{fg}/{bg}".center(cell_width)
                 row += f"{esc}{fg};{bg}m{visible}{esc}0m"
             print("│" + row + "│")
 
         print("└" + "─" * inner_width + "┘")
-        input("  [Enter] to continue...")
+        
+        print(" Background colors for reference only. Colors apply to foreground only.")
+        print("\n Current: RX=" + color_names.get(self._color_rx, str(self._color_rx)) + ", TX=" + color_names.get(self._color_tx, str(self._color_tx)) + ", MENU=" + color_names.get(self._color_menu, str(self._color_menu)))
+        user_input = input(" Change colors? [RX TX MENU] (e.g. 3 or a or 3 5 8 or a c h): ").strip()
+        
+        if user_input:
+            normalized = user_input.replace(',', ' ')
+            tokens = normalized.split()
+
+            # Compact format support: e.g. "234" -> ["2", "3", "4"], "ach" -> ["a", "c", "h"]
+            if len(tokens) == 1 and len(tokens[0]) > 1 and all(ch.lower() in '12345678abcdefgh' for ch in tokens[0]):
+                tokens = list(tokens[0].lower())
+
+            def _token_to_color_code(token: str) -> int | None:
+                t = token.strip().lower()
+                if t in '12345678' and len(t) == 1:
+                    return 29 + int(t)
+                if t in 'abcdefgh' and len(t) == 1:
+                    return 90 + (ord(t) - ord('a'))
+                return None
+
+            try:
+                values = []
+                for t in tokens:
+                    if not t:
+                        continue
+                    code = _token_to_color_code(t)
+                    if code is None:
+                        values = []
+                        break
+                    values.append(code)
+                
+                if not values:
+                    print("  Invalid color token (use 1-8 or a-h).")
+                elif len(values) > 3:
+                    print("  Too many values (max 3).")
+                else:
+                    if len(values) >= 1:
+                        self._color_rx = values[0]
+                    if len(values) >= 2:
+                        self._color_tx = values[1]
+                    if len(values) >= 3:
+                        self._color_menu = values[2]
+                    print(f"  Colors set: RX={color_names.get(self._color_rx, self._color_rx)}, TX={color_names.get(self._color_tx, self._color_tx)}, MENU={color_names.get(self._color_menu, self._color_menu)}")
+            except (ValueError, IndexError):
+                print("  Invalid input.")
 
     def _resolve_file_patterns(self, pattern_input: str) -> list[str]:
         """Split semicolon-separated wildcard filters and normalize defaults."""
@@ -739,7 +843,7 @@ class SerialTerminal:
                         for b in data:
                             part = f'{b:02X} '
                             parts.append(part)
-                            sys.stdout.write(part)
+                            self._write_rx(part)
                             if self._hex_cols > 0:
                                 self._hex_col_count += 1
                                 if self._hex_col_count >= self._hex_cols:
@@ -752,7 +856,7 @@ class SerialTerminal:
                         for b in data:
                             part = f'{b:03d} '
                             parts.append(part)
-                            sys.stdout.write(part)
+                            self._write_rx(part)
                             if self._hex_cols > 0:
                                 self._hex_col_count += 1
                                 if self._hex_col_count >= self._hex_cols:
@@ -765,7 +869,7 @@ class SerialTerminal:
                         display_text = data.decode('utf-8', errors='replace')
                         display_text = self._normalize_rx_newlines(display_text)
                         log_text = display_text
-                        sys.stdout.write(display_text)
+                        self._write_rx(display_text)
                     self._write_log(log_text)
                     sys.stdout.flush()
             except serial.SerialException:
