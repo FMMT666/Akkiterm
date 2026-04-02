@@ -25,8 +25,8 @@ Works on all platforms which support Python and PySerial:
   - local TX echo
   - new line mode (LF->CRLF)
   - now in color
-  - console (yeah \o/)
-  - many more to come
+  - console
+  - enterless menu (yeah \o/)
   - ...
 
 
@@ -44,7 +44,7 @@ Send file options:
 
 ![menu](images/sendfile.png)  
 
-Maybe I'll add some colors:
+Now in color:
 
 ![menu](images/colortest.png)  
 
@@ -167,7 +167,7 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
-    - colors
+    - menu selection without enter(?)
     - show special chars (CR, LF, etc.)
     - trigger
     - optional delimiter for formatted output (e.g. CSV)
@@ -176,6 +176,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/04/03:
+    - changed menu selection to work without pressing enter
 
 ### CHANGES 2026/04/02:
     - added color selection for RX and TX echo

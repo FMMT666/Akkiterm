@@ -508,6 +508,24 @@ class SerialTerminal:
         self._rx_prev_was_cr = prev_was_cr
         return ''.join(out)
 
+    def _read_menu_choice(self) -> str:
+        """Read a single menu key without requiring Enter."""
+        _set_raw(True)
+        try:
+            while True:
+                ch = _getch()
+                if not ch:
+                    continue
+                if ch in (ESC, CR, LF):
+                    return ''
+                if len(ch) == 1:
+                    try:
+                        return chr(ch[0]).lower()
+                    except ValueError:
+                        continue
+        finally:
+            _set_raw(False)
+
     def color_test_matrix(self):
         """Show a compact ANSI foreground/background color matrix with color selection."""
         esc = "\x1b["
@@ -526,16 +544,18 @@ class SerialTerminal:
         left_width = 8
         cell_width = 8
         inner_width = left_width + len(bg_names) * cell_width
+        encoding = (sys.stdout.encoding or '').lower()
+        arrow = '→' if 'utf' in encoding else '->'
 
         print()
         print("┌" + "─" * inner_width + "┐")
         print("│" + f"{'':<{left_width}}" + "".join(f"{name:^{cell_width}}" for name in bg_names) + "│")
-        print("│" + f"{'   std':<{left_width}}" + "".join(f"{str(i):^{cell_width}}" for i in range(1, 9)) + "│")
-        print("│" + f"{'bright':<{left_width}}" + "".join(f"{ch:^{cell_width}}" for ch in 'abcdefgh') + "│")
+        print("│" + f"{('  std' + arrow):<{left_width}}" + "".join(f"{str(i):^{cell_width}}" for i in range(1, 9)) + "│")
+        print("│" + f"{(' bright' + arrow):<{left_width}}" + "".join(f"{ch:^{cell_width}}" for ch in 'abcdefgh') + "│")
         print("├" + "─" * inner_width + "┤")
 
         for fg_label, fg in fg_rows:
-            row = f"{fg_label:<{left_width}}"
+            row = f" {fg_label} {arrow}".ljust(left_width)
             bg_start = 100 if fg >= 90 else 40
             for bg in range(bg_start, bg_start + 8):
                 visible = f"{fg}/{bg}".center(cell_width)
@@ -880,7 +900,7 @@ class SerialTerminal:
     # --- Menu
     def show_menu(self):
         self._in_menu = True
-        _set_raw(False)  # Switch to normal mode for menu input.
+        _set_raw(False)  # Line-input mode for follow-up prompts in menu actions.
 
         print("\n")
         print("┌─────────────────────────────────┐")
@@ -908,7 +928,11 @@ class SerialTerminal:
         print("│  [q]  quit                      │")
         print("│  [Enter/Esc]  back              │")
         print("└─────────────────────────────────┘")
-        choice = input("Select option: ").strip().lower()
+        sys.stdout.write("Select option: ")
+        sys.stdout.flush()
+        choice = self._read_menu_choice()
+        sys.stdout.write((choice if choice else '') + "\n")
+        sys.stdout.flush()
 
         if choice == 'q':
 #            self.stop()
