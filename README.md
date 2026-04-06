@@ -4,7 +4,7 @@ Akkiterm
 A quick and dirty serial terminal application for the console, for now.  
 Useful for communication with MCUs, debugging, etc.  
 
-Works on all platforms which support Python and PySerial:
+Works on all platforms that support Python and PySerial:
 
   - macOS
   - Linux
@@ -23,8 +23,9 @@ Works on all platforms which support Python and PySerial:
   - send file (ASCII/DEC/HEX) with wildcard filter + one-key selection
   - local folder config save & autoload
   - local TX echo
-  - new line mode (LF->CRLF)
+  - newline mode (LF->CRLF)
   - now in color
+  - now with optional visualization of control characters
   - console
   - enterless menu (yeah \o/)
   - ...
@@ -32,7 +33,7 @@ Works on all platforms which support Python and PySerial:
 
 ### SOME SCREENSHOTS
 
-Startup with ```akkiterm.cfg``` in local path:  
+Startup with ```akkiterm.cfg``` in the local directory:  
 
 ![startup with config](images/start.png)  
 
@@ -98,7 +99,7 @@ consider creating a batch file
     where py >nul 2>nul && py "%~dp0akkiterm.py" %* && goto :eof
     python "%~dp0akkiterm.py" %*
 
-and store it, together with akkiterm.py, in a directory within your path variable.
+and store it, together with akkiterm.py, in a directory within your PATH variable.
 
 
 ---
@@ -136,7 +137,7 @@ With this, pressing
   - "d" will send the character codes 97..101, resulting in '```abcde```'.  
   - "h" will send the character codes 0x33, 0x34, 0x35, 0x3a, which should give '```123:```'.
 
-The provided "example" directory contains a sample configuration file with a couple of macros defined.
+The provided "examples" directory contains a sample configuration file with a couple of macros defined.
 
 ### SEND FILE
 
@@ -167,9 +168,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
-    - menu selection without enter(?)
-    - show special chars (CR, LF, etc.)
-    - trigger
+    - special chars also for TX echo
+    - maybe add some up-to-date screenshots
+    - trigger, send macro when sequence is received
     - optional delimiter for formatted output (e.g. CSV)
     - much more
 
@@ -177,8 +178,11 @@ Three example files are provided in the "examples" directory.
 ---
 ## NEWS
 
+### CHANGES 2026/04/06:
+    - added optional visualization of ASCII control characters
+
 ### CHANGES 2026/04/03:
-    - changed menu selection to work without pressing enter
+    - changed menu selection to work without pressing Enter
 
 ### CHANGES 2026/04/02:
     - added color selection for RX and TX echo
@@ -187,7 +191,7 @@ Three example files are provided in the "examples" directory.
     - added a color test function
 
 ### CHANGES 2026/03/31:
-    - added new line mode (LF->CRLF)
+    - added newline mode (LF->CRLF)
 
 ### CHANGES 2026/03/30:
     - added sample config file with macros
@@ -211,14 +215,14 @@ Three example files are provided in the "examples" directory.
     - added DEC output mode (formatted, 3 digits with leading zeros)
 
 ### CHANGES 2026/03/24:
-    - added HEX and DEC input (linewise)
+    - added HEX and DEC input (line-wise)
 
 ### CHANGES 2026/03/22:
     - added config file with automatic loading function on startup
 
 ### CHANGES 2026/03/21:
     - added HEX output
-    - added HEX output formatting; new line after n bytes
+    - added HEX output formatting; newline after n bytes
 
 ### CHANGES 2026/03/18:
     - initial version
