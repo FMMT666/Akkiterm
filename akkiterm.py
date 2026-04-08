@@ -451,7 +451,7 @@ class SerialTerminal:
             self._print_macros_lines()
         cr_label = " +CR" if self._file_send_format == 'asc' and self._file_send_asc_cr else ""
         print(f"  Send file : {self._file_send_format.upper()}{cr_label}  (filter: {self._file_send_filter})")
-        print(f"  Ctrl view : {self._asc_ctrl_view.upper()}  (ASCII RX)")
+        print(f"  Ctrl view : {self._asc_ctrl_view.upper()}  (ASCII RX/TX)")
         print(f"  Line send : {'ON' if self._line_send_mode else 'OFF'}  ({self._line_send_format.upper()})")
 
     def _echo_tx(self, data: bytes):
@@ -466,7 +466,9 @@ class SerialTerminal:
             for b in data:
                 self._write_tx(f'{b:03d} ')
         else:
-            self._write_tx(data.decode('utf-8', errors='replace'))
+            display_text = data.decode('utf-8', errors='replace')
+            display_text = self._visualize_ascii_controls(display_text)
+            self._write_tx(display_text)
         sys.stdout.flush()
 
     def _write_rx(self, text: str):
@@ -1078,7 +1080,7 @@ class SerialTerminal:
             modes = ('off', 'names', 'hex', 'unicode')
             idx = modes.index(self._asc_ctrl_view) if self._asc_ctrl_view in modes else 0
             self._asc_ctrl_view = modes[(idx + 1) % len(modes)]
-            print(f"  ASCII control view: {self._asc_ctrl_view.upper()}")
+            print(f"  ASCII control view (RX/TX): {self._asc_ctrl_view.upper()}")
 
         elif choice == 'i':
             connected = self.ser and self.ser.is_open
@@ -1104,7 +1106,7 @@ class SerialTerminal:
             print(f"  Macros    : {macros_status}")
             cr_label = " +CR" if self._file_send_format == 'asc' and self._file_send_asc_cr else ""
             print(f"  Send file : {self._file_send_format.upper()}{cr_label}  (filter: {self._file_send_filter})")
-            print(f"  Ctrl view : {self._asc_ctrl_view.upper()}  (ASCII RX)")
+            print(f"  Ctrl view : {self._asc_ctrl_view.upper()}  (ASCII RX/TX)")
             print(f"  Line send : {line_mode}  ({self._line_send_format.upper()})")
             print(f"  Status    : {status}\n")
             input("  [Enter] to continue...")

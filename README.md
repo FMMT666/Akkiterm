@@ -25,7 +25,7 @@ Works on all platforms that support Python and PySerial:
   - local TX echo
   - newline mode (LF->CRLF)
   - now in color
-  - now with optional visualization of control characters
+  - now with optional visualization of control characters for RX and TX
   - console
   - enterless menu (yeah \o/)
   - ...
@@ -168,7 +168,6 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
-    - special chars also for TX echo
     - maybe add some up-to-date screenshots
     - trigger, send macro when sequence is received
     - optional delimiter for formatted output (e.g. CSV)
@@ -177,6 +176,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/04/08:
+    - added optional visualization of ASCII control characters also for TX echo
 
 ### CHANGES 2026/04/06:
     - added optional visualization of ASCII control characters
