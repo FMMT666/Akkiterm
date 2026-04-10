@@ -49,6 +49,10 @@ Now in color:
 
 ![menu](images/colortest.png)  
 
+And with control characters:
+
+![menu](images/controlchars.png)  
+
 [...]
 
 
@@ -176,6 +180,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/04/10:
+    - added updated screenshots
 
 ### CHANGES 2026/04/08:
     - added optional visualization of ASCII control characters also for TX echo
