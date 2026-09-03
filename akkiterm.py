@@ -22,8 +22,10 @@ Controls:
 """
 
 
-AKKITERM_VERSION = "0.40"
+AKKITERM_VERSION = "0.41"
 
+# fix for Python 3.7 - 3.9
+from __future__ import annotations
 
 
 import sys
@@ -1135,7 +1137,7 @@ class SerialTerminal:
         saved_port = self.load_config()
         available  = [p.device for p in list_ports()]
 
-        if saved_port and saved_port in available:
+        if saved_port and (saved_port in available or os.path.exists(saved_port)):
             print(f"  Config loaded:")
             print(f"  Port      : {saved_port}")
             self._print_config_info("")

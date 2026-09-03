@@ -64,6 +64,8 @@ Requirements:
  - Python 3
  - PySerial
 
+Minimum Python version is 3.7.
+
 In case you don't have PySerial installed or are not sure, get it with:
 
     pip install pyserial
@@ -114,6 +116,26 @@ Most should be self-explanatory (for now). Press ESC for the menu.
 In case a file ```akkiterm.cfg``` exists in the local directory, the configuration is loaded automatically.
 
 [...]
+
+
+### UNDETECTED PORTS
+
+On some mini computers, like Odroid and maybe many more, PySerial fails to recognize the internal serial ports.  
+With an Akkiterm fix in 0.41, it now is possible to use these ports if you manually create a config file ```akkiterm.cfg```
+with the PORT given, e.g.:
+
+    PORT=/dev/ttyS0
+
+
+### CONFIG FILE
+
+In case you want to manually modify the config file ```akkiterm.cfg```, which is usually not necessary, except
+you have to deal with undetected ports; for now, please check the code.  
+It's also helful to just use the save functionality to obtain a template file. A valid port (see "UNDETECTED PORTS" above)
+is all you need to proceed.
+
+[...]
+
 
 ### MACROS
 
@@ -180,6 +202,11 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/09/03:
+    - fixed usage with old Python versions, 3.7. - 3.9.
+    - fixed undetected port handling via config file
+    - increased version to 0.41
 
 ### CHANGES 2026/04/10:
     - added updated screenshots
