@@ -21,11 +21,11 @@ Controls:
     "documented and user-friendly". Well, here we are. Enjoy the overkill docstring!
 """
 
+# fix for Python 3.7 - 3.9
+from __future__ import annotations
 
 AKKITERM_VERSION = "0.41"
 
-# fix for Python 3.7 - 3.9
-from __future__ import annotations
 
 
 import sys
