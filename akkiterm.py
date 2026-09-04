@@ -24,7 +24,7 @@ Controls:
 # fix for Python 3.7 - 3.9
 from __future__ import annotations
 
-AKKITERM_VERSION = "0.41"
+AKKITERM_VERSION = "0.42"
 
 
 
@@ -99,7 +99,7 @@ ESC = b'\x1b'
 CR  = b'\r'
 LF  = b'\n'
 
-CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'akkiterm.cfg')
+CFG_FILE = os.path.join(os.getcwd(), 'akkiterm.cfg')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_SELECT_KEYS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 

@@ -203,6 +203,13 @@ Three example files are provided in the "examples" directory.
 ---
 ## NEWS
 
+### CHANGES 2026/09/05:
+    - fixed location of config file; now always in current path
+    - increased version to 0.42
+
+### CHANGES 2026/09/04:
+    - fixed old Python fix
+
 ### CHANGES 2026/09/03:
     - fixed usage with old Python versions, 3.7. - 3.9.
     - fixed undetected port handling via config file
