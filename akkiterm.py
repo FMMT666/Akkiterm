@@ -31,6 +31,7 @@ AKKITERM_VERSION = "0.43"
 import sys
 import os
 import fnmatch
+import locale
 import threading
 import time
 from datetime import datetime
@@ -80,6 +81,32 @@ else:
 
     def _getch() -> bytes:
         return sys.stdin.buffer.read(1)
+
+
+def _getch_utf8() -> bytes:
+    """Read one keyboard character, including all bytes of a UTF-8 sequence."""
+    first = _getch()
+    encoding = getattr(sys.stdin, 'encoding', None) or locale.getpreferredencoding(False)
+    is_utf8 = encoding.lower().replace('-', '') == 'utf8'
+    if sys.platform == "win32" or not is_utf8 or not first or first[0] < 0x80:
+        return first
+
+    if first[0] & 0xE0 == 0xC0:
+        expected = 2
+    elif first[0] & 0xF0 == 0xE0:
+        expected = 3
+    elif first[0] & 0xF8 == 0xF0:
+        expected = 4
+    else:
+        return first
+
+    sequence = bytearray(first)
+    while len(sequence) < expected:
+        next_byte = _getch()
+        if not next_byte:
+            break
+        sequence.extend(next_byte)
+    return bytes(sequence)
 
 
 # ----------------------------------------------------------------------
@@ -418,7 +445,7 @@ class SerialTerminal:
                     if len(parts) >= 3:
                         macro_key = parts[1]
                         macro_fmt = '_'.join(parts[2:]).upper()
-                        if macro_fmt in ('ASC', 'DEC', 'HEX') and len(macro_key) == 1 and 32 <= ord(macro_key) <= 126:
+                        if macro_fmt in ('ASC', 'DEC', 'HEX') and len(macro_key) == 1 and macro_key.isprintable():
                             self._macros[macro_key] = (macro_fmt, val)
             # If both are enabled by malformed/legacy config, prefer HEX.
             if self._hex_mode and self._dec_mode:
@@ -608,7 +635,7 @@ class SerialTerminal:
         _set_raw(True)
         try:
             while True:
-                ch = _getch()
+                ch = _getch_utf8()
                 if not ch:
                     continue
                 if ch in (ESC, CR, LF):
@@ -1228,7 +1255,7 @@ class SerialTerminal:
                     time.sleep(0.01)
                     continue
 
-                ch = _getch()
+                ch = _getch_utf8()
                 if not ch:
                     continue
 
@@ -1244,9 +1271,12 @@ class SerialTerminal:
                 if self.ser and self.ser.is_open and not self._in_menu:
                     try:
                         # Check for macro first (only in normal mode, not in line_send_mode)
-                        if not self._line_send_mode and self._macros_enabled and len(ch) == 1:
-                            ch_char = chr(ch[0])
-                            if ch_char in self._macros:
+                        if not self._line_send_mode and self._macros_enabled:
+                            try:
+                                ch_char = ch.decode('utf-8')
+                            except UnicodeDecodeError:
+                                ch_char = ''
+                            if len(ch_char) == 1 and ch_char in self._macros:
                                 fmt, value = self._macros[ch_char]
                                 self._send_macro_data(fmt, value)
                                 continue

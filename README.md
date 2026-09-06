@@ -173,6 +173,23 @@ With this, pressing
 
 The provided "examples" directory contains a sample configuration file with a couple of macros defined.
 
+#### MACRO KEY RESTRICTIONS
+
+On unicode terminals (macOS, Linux) almost all characters should be usable as hotkeys, except for
+
+    _ =
+
+which are used in the config file to define macros:
+
+    MACRO_=_ASC=My stupid parsing forbids = as the key.
+    MACRO___ASC=Same here. Maybe I'll fix this in the future.
+
+Under Windoze, unicode input is NOT SUPPORTED, but most of the special characters will work,  
+except for:
+
+    _ = &
+
+
 ### SEND FILE
 
 Akkiterm can send a file from the local directory via ESC → ```[u]```.
@@ -202,6 +219,9 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
+    - fix cursor keys (or maybe more) to not open the menu
+    - fix for undetected (non udev) ports for mini computers (Odroid, RPi, etc.) 
+    - pasted text (CMD/CTRL+V) in the terminal is not entirely visibla before hitting enter
     - maybe add some up-to-date screenshots
     - trigger, send macro when sequence is received
     - optional delimiter for formatted output (e.g. CSV)
@@ -210,6 +230,10 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/09/07:
+    - added macro key support for (most) special characters and unicode characters (macOS, Linux); limited support for Windoze
+    - increase version to 0.44
 
 ### CHANGES 2026/09/06:
     - added escape sequences and control characters to the macros
@@ -224,7 +248,7 @@ Three example files are provided in the "examples" directory.
 
 ### CHANGES 2026/09/03:
     - fixed usage with old Python versions, 3.7. - 3.9.
-    - fixed undetected port handling via config file
+    - fixed undetected port handling via config file (workaround only)
     - increased version to 0.41
 
 ### CHANGES 2026/04/10:
