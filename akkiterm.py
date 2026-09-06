@@ -24,7 +24,7 @@ Controls:
 # fix for Python 3.7 - 3.9
 from __future__ import annotations
 
-AKKITERM_VERSION = "0.42"
+AKKITERM_VERSION = "0.43"
 
 
 
@@ -105,6 +105,56 @@ FILE_SELECT_KEYS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
 
 # ----------------------------------------------------------------------
 # --- Helper functions
+def _decode_macro_asc(value: str) -> str:
+    """Decode config-file escapes in an ASC macro without changing other text."""
+    escapes = {
+        'a': '\a', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r',
+        't': '\t', 'v': '\v', '0': '\0', '\\': '\\',
+    }
+    out = []
+    index = 0
+    while index < len(value):
+        if value[index] != '\\' or index + 1 == len(value):
+            out.append(value[index])
+            index += 1
+            continue
+
+        escaped = value[index + 1]
+        if escaped in escapes:
+            out.append(escapes[escaped])
+            index += 2
+        elif escaped == 'x' and index + 3 < len(value):
+            try:
+                out.append(chr(int(value[index + 2:index + 4], 16)))
+                index += 4
+            except ValueError:
+                out.extend(('\\', escaped))
+                index += 2
+        elif escaped in ('u', 'U'):
+            digits = 4 if escaped == 'u' else 8
+            end = index + 2 + digits
+            try:
+                out.append(chr(int(value[index + 2:end], 16)))
+                index = end
+            except (ValueError, IndexError):
+                out.extend(('\\', escaped))
+                index += 2
+        else:
+            out.extend(('\\', escaped))
+            index += 2
+    return ''.join(out)
+
+
+def _encode_macro_asc(value: str) -> str:
+    """Encode control characters and backslashes for a config-file value."""
+    replacements = {
+        '\\': '\\\\', '\a': '\\a', '\b': '\\b', '\f': '\\f',
+        '\n': '\\n', '\r': '\\r', '\t': '\\t', '\v': '\\v',
+        '\0': '\\0',
+    }
+    return ''.join(replacements.get(char, char) for char in value)
+
+
 def clear_screen():
     os.system('cls' if sys.platform == 'win32' else 'clear')
 
@@ -294,6 +344,8 @@ class SerialTerminal:
                 f.write(f'COLOR_MENU={self._color_menu}\n')
                 # Macros always last, sorted alphabetically by key for readability and maintainability
                 for key, (fmt, value) in sorted(self._macros.items()):
+                    if fmt == 'ASC':
+                        value = _encode_macro_asc(value)
                     f.write(f'MACRO_{key}_{fmt}={value}\n')
             print(f'  Settings saved to {CFG_FILE}')
         except OSError as e:
@@ -797,7 +849,7 @@ class SerialTerminal:
         out = bytearray()
 
         if fmt == 'ASC':
-            # Treat as raw ASCII string
+            value = _decode_macro_asc(value)
             try:
                 out = bytearray(value.encode('utf-8'))
             except Exception:

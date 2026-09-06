@@ -158,6 +158,14 @@ Example:
     MACRO_d_DEC=97 98 99 100 101
     MACRO_h_HEX=33 34 35 3a
 
+In `ASC` macros, common escape sequences are interpreted before sending:
+
+    MACRO_1_ASC=first line\nsecond line\r\n\tindented
+
+Supported escapes include `\n`, `\r`, `\t`, `\a`, `\b`, `\f`, `\v`, `\0`,
+`\xNN`, and `\uNNNN` (also `\UNNNNNNNN`). To send a literal backslash, escape
+it as `\\`; for example, `\\n` sends the two characters `\` and `n`.
+
 With this, pressing
   - "1", "2" or "3" (```ASC```) will send the corresponding strings defined.  
   - "d" will send the character codes 97..101, resulting in '```abcde```'.  
@@ -202,6 +210,10 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/09/06:
+    - added escape sequences and control characters to the macros
+    - increased version to 0.43
 
 ### CHANGES 2026/09/05:
     - fixed location of config file; now always in current path
