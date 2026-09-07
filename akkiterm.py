@@ -24,7 +24,7 @@ Controls:
 # fix for Python 3.7 - 3.9
 from __future__ import annotations
 
-AKKITERM_VERSION = "0.43"
+AKKITERM_VERSION = "0.45"
 
 
 
@@ -80,9 +80,11 @@ else:
         return bool(dr)
 
     def _getch() -> bytes:
-        return sys.stdin.buffer.read(1)
+        return os.read(sys.stdin.fileno(), 1)
 
 
+# ----------------------------------------------------------------------
+# --- Escape-sequences handling
 def _getch_utf8() -> bytes:
     """Read one keyboard character, including all bytes of a UTF-8 sequence."""
     first = _getch()
@@ -110,6 +112,46 @@ def _getch_utf8() -> bytes:
 
 
 # ----------------------------------------------------------------------
+# --- Escape-sequence handling
+def _read_escape_sequence_tail() -> bytes | None:
+    """Read the rest of an escape sequence, or None for a lone ESC byte."""
+    if sys.platform == "win32":
+        deadline = time.monotonic() + ESC_SEQUENCE_TIMEOUT
+        while not msvcrt.kbhit() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        if not msvcrt.kbhit():
+            return None
+        first = _getch()
+    else:
+        ready, _, _ = select.select([sys.stdin], [], [], ESC_SEQUENCE_TIMEOUT)
+        if not ready:
+            return None
+        first = _getch()
+
+    sequence = bytearray(first)
+    if first not in (b'[', b'O'):
+        return bytes(sequence)
+
+    while True:
+        if sys.platform == "win32":
+            deadline = time.monotonic() + ESC_SEQUENCE_TIMEOUT
+            while not msvcrt.kbhit() and time.monotonic() < deadline:
+                time.sleep(0.001)
+            if not msvcrt.kbhit():
+                return bytes(sequence)
+            next_byte = _getch()
+        else:
+            ready, _, _ = select.select([sys.stdin], [], [], ESC_SEQUENCE_TIMEOUT)
+            if not ready:
+                return bytes(sequence)
+            next_byte = _getch()
+
+        sequence.extend(next_byte)
+        if next_byte and 0x40 <= next_byte[0] <= 0x7E:
+            return bytes(sequence)
+
+
+# ----------------------------------------------------------------------
 # --- Defaults and constants
 DEFAULT_BAUDRATE   = 115200
 DEFAULT_BYTESIZE   = serial.EIGHTBITS       # 8
@@ -125,6 +167,7 @@ AVAILABLE_BAUDRATES = [
 ESC = b'\x1b'
 CR  = b'\r'
 LF  = b'\n'
+ESC_SEQUENCE_TIMEOUT = 0.05
 
 CFG_FILE = os.path.join(os.getcwd(), 'akkiterm.cfg')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -576,6 +619,11 @@ class SerialTerminal:
             return
         if self._in_menu and not allow_in_menu:
             return
+
+        # ASkr TESTING 1, 2, 3 ...
+        # Super workaround for non-visible text while pasting; lol 
+        time.sleep(0)
+
         # Echo immediately before sending so full TX payload is visible first.
         self._echo_tx(data)
         self.ser.write(data)
@@ -1260,6 +1308,10 @@ class SerialTerminal:
                     continue
 
                 if ch == ESC:
+                    escape_tail = _read_escape_sequence_tail()
+                    if escape_tail is not None:
+                        self._send_bytes(ESC + escape_tail)
+                        continue
                     if self._line_send_mode and self._line_input_buf:
                         self._line_input_buf.clear()
                         sys.stdout.write("\r\n")

@@ -184,7 +184,7 @@ which are used in the config file to define macros:
     MACRO_=_ASC=My stupid parsing forbids = as the key.
     MACRO___ASC=Same here. Maybe I'll fix this in the future.
 
-Under Windoze, unicode input is NOT SUPPORTED, but most of the special characters will work,  
+Under Windoze, unicode input is NOT SUPPORTED, but most of the special characters will work as hotkeys,
 except for:
 
     _ = &
@@ -219,21 +219,28 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## TODO
-    - fix cursor keys (or maybe more) to not open the menu
     - fix for undetected (non udev) ports for mini computers (Odroid, RPi, etc.) 
-    - pasted text (CMD/CTRL+V) in the terminal is not entirely visibla before hitting enter
     - maybe add some up-to-date screenshots
     - trigger, send macro when sequence is received
     - optional delimiter for formatted output (e.g. CSV)
     - much more
 
+---
+## TOCHK/KEEPINMIND
+    - time.sleep(0) "fix" for invisible text while pasting; _send_bytes()
+
 
 ---
 ## NEWS
 
+### CHANGES 2026/09/08:
+    - fixed escape sequence keys to not open the menu and getting txed (cursor, page up/down, home, end, etc.)
+    - fixed (aka workarounded) text not visible while pasting
+    - increased version to 0.45
+
 ### CHANGES 2026/09/07:
-    - added macro key support for (most) special characters and unicode characters (macOS, Linux); limited support for Windoze
-    - increase version to 0.44
+    - added macro hotkey support for (most) special characters and unicode characters (macOS, Linux); limited support for Windoze
+    - increased version to 0.44
 
 ### CHANGES 2026/09/06:
     - added escape sequences and control characters to the macros
