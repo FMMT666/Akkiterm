@@ -126,6 +126,21 @@ with the PORT given, e.g.:
 
     PORT=/dev/ttyS0
 
+As of Akkiterm version 0.46, an additional list of, well "most likely existing device names" is used to reveal
+additional device names:
+
+    /dev/serial0/1
+    /dev/ttyS...
+    /dev/ttyAMA...
+    /dev/ttySAMA...
+    /dev/ttyO...
+    /dev/ttyTHS...
+    /dev/ttyUSB...
+    /dev/ttyACM...
+
+This shall (hopefully) fix most of the PySerial port issues.  
+"It's working on my system", hehe.
+
 
 ### CONFIG FILE
 
@@ -232,6 +247,10 @@ Three example files are provided in the "examples" directory.
 
 ---
 ## NEWS
+
+### CHANGES 2026/09/09:
+    - added list of well known ports to fix PySerials device detection
+    - increased version to 0.46
 
 ### CHANGES 2026/09/08:
     - fixed escape sequence keys to not open the menu and getting txed (cursor, page up/down, home, end, etc.)

@@ -24,7 +24,7 @@ Controls:
 # fix for Python 3.7 - 3.9
 from __future__ import annotations
 
-AKKITERM_VERSION = "0.45"
+AKKITERM_VERSION = "0.46"
 
 
 
@@ -243,10 +243,30 @@ def list_ports() -> list:
     return ports
 
 
+def _undetected_port_candidates() -> list[str]:
+    """Return existing Linux serial devices that PySerial may not enumerate."""
+    if not sys.platform.startswith('linux'):
+        return []
+
+    candidates = [
+        '/dev/serial0', '/dev/serial1',
+        *[f'/dev/ttyS{i}' for i in range(8)],
+        *[f'/dev/ttyAMA{i}' for i in range(8)],
+        *[f'/dev/ttySAMA{i}' for i in range(8)],
+        *[f'/dev/ttyO{i}' for i in range(8)],
+        *[f'/dev/ttyTHS{i}' for i in range(8)],
+        *[f'/dev/ttyUSB{i}' for i in range(10)],
+        *[f'/dev/ttyACM{i}' for i in range(10)],
+    ]
+    enumerated = {port.device for port in list_ports()}
+    return [path for path in candidates if path not in enumerated and os.path.exists(path)]
+
+
 def select_port() -> str | None:
     """Interactive port selection. Return the selected port name."""
     ports = list_ports()
-    if not ports:
+    undetected = _undetected_port_candidates()
+    if not ports and not undetected:
         print("⚠  No serial ports found.")
         print("   Please connect a device and restart the program.\n")
         return None
@@ -256,15 +276,20 @@ def select_port() -> str | None:
     for i, p in enumerate(ports, 1):
         desc = p.description if p.description != "n/a" else ""
         print(f"  [{i}]  {p.device:<12}  {desc}")
+    for i, device in enumerate(undetected, len(ports) + 1):
+        print(f"  [{i}]  {device:<12}  (device exists; not listed by PySerial)")
     print("─" * 40)
 
     while True:
         try:
-            choice = input(f"Select port [1-{len(ports)}]: ").strip()
+            total_ports = len(ports) + len(undetected)
+            choice = input(f"Select port [1-{total_ports}]: ").strip()
             idx = int(choice) - 1
             if 0 <= idx < len(ports):
                 return ports[idx].device
-            print(f"  Please enter a number between 1 and {len(ports)}.")
+            if len(ports) <= idx < total_ports:
+                return undetected[idx - len(ports)]
+            print(f"  Please enter a number between 1 and {total_ports}.")
         except (ValueError, KeyboardInterrupt):
             print("\nCanceled.")
             return None
